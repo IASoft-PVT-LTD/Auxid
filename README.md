@@ -2,7 +2,7 @@
   <img src="logo.png" alt="Auxid Logo" width="190" style="border-radius: 1.15rem;"/>
   <br/>
 
-  <img src="https://img.shields.io/badge/license-PolyForm_Noncommercial_1.0.0-darkblue.svg" alt="License"/>
+  <img src="https://img.shields.io/badge/license-Apache_2.0-darkblue.svg" alt="License"/>
   <img src="https://img.shields.io/badge/standard-C%2B%2B23-darkred.svg" alt="C++ Standard"/>
   <img src="https://img.shields.io/badge/compiler-MSVC | Clang | GCC-darkgreen.svg" alt="Compiler"/>
   <img src="https://img.shields.io/badge/platforms-Linux | Windows | macOS | WASM-darkslateblue.svg" alt="Platforms"/>
@@ -216,6 +216,6 @@ Explore the Auxid Ecosystem!
 
 Copyright © 2026 IASoft (PVT) LTD.
 
-Licensed under the [PolyForm Noncommercial License 1.0.0](https://polyformproject.org/licenses/noncommercial/1.0.0) — free for noncommercial use; commercial licensing available from IASoft (contact@iasoft.dev). See [LICENSE](LICENSE).
+Licensed under the [Apache License, Version 2.0](https://www.apache.org/licenses/LICENSE-2.0). See [LICENSE](LICENSE).
 
 Vendored third-party components ([rpmalloc](https://github.com/mjansson/rpmalloc), [wyhash](https://github.com/wangyi-fudan/wyhash)) retain their own licenses, recorded in their source headers.
