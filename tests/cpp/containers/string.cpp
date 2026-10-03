@@ -85,21 +85,25 @@ namespace
 
     auto arena_basic_string() -> bool
     {
-      using ArenaString = BasicString<memory::ArenaAllocator>;
+      using ArenaRef = memory::AllocatorRef<memory::ArenaAllocator>;
+      using ArenaString = BasicString<ArenaRef>;
 
       alignas(8) static u8 arena_buffer[1024];
       memory::ArenaAllocator arena;
       arena.init(arena_buffer, sizeof(arena_buffer));
+      const ArenaRef arena_ref(arena);
 
-      ArenaString sso(arena);
+      ArenaString sso(arena_ref);
       sso.assign(StringView("Rigid"));
       if (!check_eq(sso.size(), 5u, "arena sso size"))
         return false;
       if (!check_eq(sso, StringView("Rigid"), "arena sso content"))
         return false;
 
-      ArenaString heap(arena);
+      ArenaString heap(arena_ref);
       heap.reserve(128);
+      if (!check(arena.offset >= 129u, "arena offset advanced by heap reserve"))
+        return false;
       heap.assign(StringView("This string is deliberately long to bypass SSO capacity."));
       if (!check(heap.size() > 23u, "arena heap path size > 23"))
         return false;

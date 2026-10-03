@@ -12,6 +12,7 @@ module;
 #include <auxid/macros.hpp>
 
 #include <atomic>
+#include <concepts>
 #include <cstdlib>
 #include <cstring>
 #include <memory>
@@ -42,7 +43,14 @@ export namespace au::memory
     { v.free(ptr, size, align) } -> std::same_as<void>;
   };
 
-  template<typename T, AllocatorType A = HeapAllocator> class StdAllocatorAdapter
+  // The adapter keeps its allocator by value and hands copies of itself to the
+  // container (rebinding, select_on_container_copy_construction), so A must be
+  // copyable and every copy must allocate from the same place. Stateless
+  // allocators (HeapAllocator) qualify directly; stateful ones such as
+  // ArenaAllocator are non-copyable and are shared through AllocatorRef.
+  template<typename T, AllocatorType A = HeapAllocator>
+    requires std::copy_constructible<A>
+  class StdAllocatorAdapter
   {
 public:
     using value_type = T;
@@ -252,11 +260,23 @@ public:
 
 export namespace au::memory
 {
+  // The bump state (buffer, length, offset) lives inside the arena, so the arena
+  // is neither copyable nor movable: a copy would hand out memory the original
+  // already handed out, and a move would detach every AllocatorRef bound to the
+  // original. To give an arena to a container (Vec, BasicString, ...) or to
+  // make_box / make_arc, pass AllocatorRef<ArenaAllocator>.
   struct ArenaAllocator
   {
     u8 *buffer = nullptr;
     usize length = 0;
     usize offset = 0;
+
+    ArenaAllocator() noexcept = default;
+
+    ArenaAllocator(const ArenaAllocator &) = delete;
+    auto operator=(const ArenaAllocator &) -> ArenaAllocator & = delete;
+    ArenaAllocator(ArenaAllocator &&) = delete;
+    auto operator=(ArenaAllocator &&) -> ArenaAllocator & = delete;
 
     auto init(u8 *buf, usize len) -> void
     {
@@ -328,6 +348,77 @@ export namespace au::memory
   };
 
   static_assert(AllocatorType<ArenaAllocator>, "Allocator class must conform to AllocatorT");
+} // namespace au::memory
+
+export namespace au::memory
+{
+  // Non-owning, copyable handle to a stateful allocator. Every copy points at
+  // the same allocator, so containers that copy their allocator (Vec through
+  // StdAllocatorAdapter, BasicString, Box, Arc) all draw from one shared state.
+  // Two handles compare equal when they point at the same allocator. The
+  // referenced allocator must outlive every handle and every allocation made
+  // through it. There is no default (null) handle.
+  template<AllocatorType A> class AllocatorRef
+  {
+public:
+    using allocator_type = A;
+
+    constexpr explicit AllocatorRef(A &alloc) noexcept : m_alloc(&alloc)
+    {
+    }
+
+    [[nodiscard]] inline auto alloc(usize size) const -> void *
+    {
+      return m_alloc->alloc(size);
+    }
+
+    [[nodiscard]] inline auto alloc(usize size, usize align) const -> void *
+    {
+      return m_alloc->alloc(size, align);
+    }
+
+    [[nodiscard]] inline auto try_alloc(usize size) const -> void *
+      requires requires(A &a, usize s) {
+        { a.try_alloc(s) } -> std::same_as<void *>;
+      }
+    {
+      return m_alloc->try_alloc(size);
+    }
+
+    [[nodiscard]] inline auto try_alloc(usize size, usize align) const -> void *
+      requires requires(A &a, usize s) {
+        { a.try_alloc(s, s) } -> std::same_as<void *>;
+      }
+    {
+      return m_alloc->try_alloc(size, align);
+    }
+
+    [[nodiscard]] inline auto realloc(void *ptr, usize old_size, usize new_size, usize align) const -> void *
+    {
+      return m_alloc->realloc(ptr, old_size, new_size, align);
+    }
+
+    inline auto free(void *ptr, usize size, usize align) const -> void
+    {
+      m_alloc->free(ptr, size, align);
+    }
+
+    [[nodiscard]] constexpr auto get() const noexcept -> A &
+    {
+      return *m_alloc;
+    }
+
+    [[nodiscard]] friend constexpr auto operator==(const AllocatorRef &a, const AllocatorRef &b) noexcept -> bool
+    {
+      return a.m_alloc == b.m_alloc;
+    }
+
+private:
+    A *m_alloc;
+  };
+
+  static_assert(AllocatorType<AllocatorRef<ArenaAllocator>>, "Allocator class must conform to AllocatorT");
+  static_assert(std::copy_constructible<AllocatorRef<ArenaAllocator>>, "AllocatorRef must be copyable");
 } // namespace au::memory
 
 export namespace au::memory
