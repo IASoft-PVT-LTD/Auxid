@@ -14,6 +14,7 @@ module;
 #include <algorithm>
 #include <atomic>
 #include <bit>
+#include <concepts>
 #include <cstring>
 #include <format>
 #include <functional>
@@ -311,7 +312,7 @@ namespace au::detail
 
 export namespace au::containers
 {
-  template<memory::AllocatorType A = memory::HeapAllocator> struct BasicString
+  template<memory::AllocatorHandle A = memory::HeapAllocator> struct BasicString
   {
     static constexpr usize npos = StringView::npos;
 
@@ -393,6 +394,7 @@ private:
 
 public:
     BasicString()
+      requires std::default_initializable<A>
     {
       m_storage.s.size_shifted = 0;
       m_storage.s.data[0] = '\0';
@@ -405,6 +407,7 @@ public:
     }
 
     BasicString(const char *str)
+      requires std::default_initializable<A>
     {
       m_storage.s.size_shifted = 0;
       if (str)
@@ -414,6 +417,7 @@ public:
     }
 
     BasicString(const char *str, usize len)
+      requires std::default_initializable<A>
     {
       m_storage.s.size_shifted = 0;
 
@@ -428,6 +432,7 @@ public:
     }
 
     BasicString(StringView sv)
+      requires std::default_initializable<A>
     {
       m_storage.s.size_shifted = 0;
       assign(sv);
@@ -467,10 +472,18 @@ public:
       assign(StringView(other.data(), other.size()));
     }
 
+    // Copies keep the source's allocator, as moves do: the copy constructor
+    // takes it and copy assignment switches to it (releasing the old buffer
+    // through the old allocator first).
     BasicString &operator=(const BasicString &other)
     {
       if (this != &other)
       {
+        if constexpr (!std::is_empty_v<A>)
+        {
+          destroy();
+          m_allocator = other.m_allocator;
+        }
         assign(StringView(other.data(), other.size()));
       }
       return *this;
@@ -871,13 +884,16 @@ public:
     // process abort — treat runtime format strings as trusted (format()
     // validates at compile time; prefer it).
     static BasicString vformat(StringView fmt, std::format_args args)
+      requires std::default_initializable<A>
     {
       BasicString out;
       std::vformat_to(AppendIterator{&out}, std::string_view{fmt.data(), fmt.size()}, args);
       return out;
     }
 
-    template<typename... Args> static BasicString format(StringView fmt, Args &&...args)
+    template<typename... Args>
+    static BasicString format(StringView fmt, Args &&...args)
+      requires std::default_initializable<A>
     {
       auto converted = std::make_tuple(::au::detail::format_forward(args)...);
       return std::apply(
@@ -986,7 +1002,7 @@ template<> inline constexpr bool std::ranges::enable_borrowed_range<au::StringVi
 
 export namespace au
 {
-  template<memory::AllocatorType A> using BasicString = containers::BasicString<A>;
+  template<memory::AllocatorHandle A> using BasicString = containers::BasicString<A>;
   using String = containers::String;
 } // namespace au
 
@@ -1394,7 +1410,7 @@ public:
 export namespace au::containers
 {
   template<typename T, typename IndexT, typename AllocatorT = memory::HeapAllocator>
-    requires memory::AllocatorType<AllocatorT>
+    requires memory::AllocatorHandle<AllocatorT>
   class CompactVecBase
   {
 public:
@@ -1410,14 +1426,22 @@ public:
     using reverse_iterator = std::reverse_iterator<iterator>;
     using const_reverse_iterator = std::reverse_iterator<const_iterator>;
 
-    constexpr CompactVecBase() noexcept = default;
+    constexpr CompactVecBase() noexcept
+      requires std::default_initializable<AllocatorT>
+    = default;
+
+    explicit CompactVecBase(AllocatorT alloc) noexcept : m_allocator(std::move(alloc))
+    {
+    }
 
     explicit CompactVecBase(size_type init_size, const T &init_value = T{})
+      requires std::default_initializable<AllocatorT>
     {
       resize(init_size, init_value);
     }
 
     CompactVecBase(std::initializer_list<T> init)
+      requires std::default_initializable<AllocatorT>
     {
       reserve_exact(static_cast<size_type>(init.size()));
       if constexpr (std::is_trivially_copyable_v<T>)
@@ -1460,7 +1484,10 @@ public:
       return *this;
     }
 
-    CompactVecBase(const CompactVecBase &other)
+    // Copies keep the source's allocator, as moves do: the copy constructor
+    // takes it and copy assignment switches to it (releasing the old buffer
+    // through the old allocator first).
+    CompactVecBase(const CompactVecBase &other) : m_allocator(other.m_allocator)
     {
       reserve_exact(other.m_size);
       if constexpr (std::is_trivially_copyable_v<T>)
@@ -1482,6 +1509,14 @@ public:
       if (this != &other)
       {
         clear();
+        if constexpr (!std::is_empty_v<AllocatorT>)
+        {
+          if (m_data)
+            m_allocator.free(m_data, m_capacity * sizeof(T), alignof(T));
+          m_data = nullptr;
+          m_capacity = 0;
+          m_allocator = other.m_allocator;
+        }
         reserve_exact(other.m_size);
         if constexpr (std::is_trivially_copyable_v<T>)
         {
@@ -1497,6 +1532,11 @@ public:
         }
       }
       return *this;
+    }
+
+    [[nodiscard]] auto get_allocator() const noexcept -> const AllocatorT &
+    {
+      return m_allocator;
     }
 
     ~CompactVecBase()
@@ -1770,13 +1810,13 @@ private:
 
 export namespace au
 {
-  template<typename T, memory::AllocatorType A = memory::HeapAllocator>
+  template<typename T, memory::AllocatorHandle A = memory::HeapAllocator>
   using Vec = std::vector<T, memory::StdAllocatorAdapter<T, A>>;
 
-  template<typename T, memory::AllocatorType A = memory::HeapAllocator>
+  template<typename T, memory::AllocatorHandle A = memory::HeapAllocator>
   using TinyVec = containers::CompactVecBase<T, u16, A>;
 
-  template<typename T, memory::AllocatorType A = memory::HeapAllocator>
+  template<typename T, memory::AllocatorHandle A = memory::HeapAllocator>
   using CompactVec = containers::CompactVecBase<T, u32, A>;
 } // namespace au
 
@@ -2448,7 +2488,7 @@ export namespace au::containers
 
   template<class Entry, class Key, class KeyOf, class Hasher = Hash<Key>, class KeyEq = EqualTo<Key>,
            class AllocatorT = memory::HeapAllocator>
-    requires memory::AllocatorType<AllocatorT>
+    requires memory::AllocatorHandle<AllocatorT>
   class HashTable
   {
 public:
@@ -2483,20 +2523,44 @@ private:
     AUXID_NO_UNIQUE_ADDRESS KeyOf m_key_of{};
 
 public:
-    HashTable() noexcept : m_seed(detail::random_seed_64())
+    HashTable() noexcept
+      requires std::default_initializable<AllocatorT>
+        : m_seed(detail::random_seed_64())
     {
     }
 
-    explicit HashTable(size_type cap) : m_seed(detail::random_seed_64())
+    explicit HashTable(size_type cap)
+      requires std::default_initializable<AllocatorT>
+        : m_seed(detail::random_seed_64())
     {
       if (cap > 0)
         reserve(cap);
     }
 
-    HashTable(size_type cap, u64 seed) : m_seed(seed)
+    HashTable(size_type cap, u64 seed)
+      requires std::default_initializable<AllocatorT>
+        : m_seed(seed)
     {
       if (cap > 0)
         reserve(cap);
+    }
+
+    explicit HashTable(AllocatorT alloc) noexcept : m_entries(std::move(alloc)), m_seed(detail::random_seed_64())
+    {
+    }
+
+    HashTable(size_type cap, AllocatorT alloc) : m_entries(std::move(alloc)), m_seed(detail::random_seed_64())
+    {
+      if (cap > 0)
+        reserve(cap);
+    }
+
+    // The entry vector owns the allocator; the control/index buffer is
+    // allocated and freed through a copy of it, so copies and moves of the
+    // table carry one allocator for both.
+    [[nodiscard]] auto get_allocator() const noexcept -> const AllocatorT &
+    {
+      return m_entries.get_allocator();
     }
 
     ~HashTable()
@@ -2794,7 +2858,7 @@ private:
       const size_type idx_bytes = n_slots * sizeof(u32);
       const size_type total = ctrl_padded + idx_bytes;
 
-      AllocatorT alloc{};
+      AllocatorT alloc = m_entries.get_allocator();
       void *raw = alloc.alloc(total, kCtrlAlign);
       m_ctrl = static_cast<ctrl_t *>(raw);
       m_index = reinterpret_cast<u32 *>(static_cast<u8 *>(raw) + ctrl_padded);
@@ -2813,7 +2877,7 @@ private:
       const size_type ctrl_padded = (ctrl_bytes + idx_align - 1) & ~(idx_align - 1);
       const size_type idx_bytes = m_capacity * sizeof(u32);
       const size_type total = ctrl_padded + idx_bytes;
-      AllocatorT alloc{};
+      AllocatorT alloc = m_entries.get_allocator();
       alloc.free(m_ctrl, total, kCtrlAlign);
       m_ctrl = nullptr;
       m_index = nullptr;
@@ -3009,7 +3073,7 @@ export namespace au::containers
 {
   template<typename K, typename V, typename Hasher = Hash<K>, typename KeyEq = EqualTo<K>,
            typename AllocatorT = memory::HeapAllocator>
-    requires memory::AllocatorType<AllocatorT>
+    requires memory::AllocatorHandle<AllocatorT>
   class HashMap
   {
 public:
@@ -3032,14 +3096,33 @@ private:
     Table m_table;
 
 public:
-    HashMap() = default;
+    HashMap()
+      requires std::default_initializable<AllocatorT>
+    = default;
 
-    explicit HashMap(size_type cap) : m_table(cap)
+    explicit HashMap(size_type cap)
+      requires std::default_initializable<AllocatorT>
+        : m_table(cap)
     {
     }
 
-    HashMap(size_type cap, u64 seed) : m_table(cap, seed)
+    HashMap(size_type cap, u64 seed)
+      requires std::default_initializable<AllocatorT>
+        : m_table(cap, seed)
     {
+    }
+
+    explicit HashMap(AllocatorT alloc) noexcept : m_table(std::move(alloc))
+    {
+    }
+
+    HashMap(size_type cap, AllocatorT alloc) : m_table(cap, std::move(alloc))
+    {
+    }
+
+    [[nodiscard]] auto get_allocator() const noexcept -> const AllocatorT &
+    {
+      return m_table.get_allocator();
     }
 
     [[nodiscard]] u64 seed() const noexcept
@@ -3207,7 +3290,7 @@ public:
 
   template<typename K, typename Hasher = Hash<K>, typename KeyEq = EqualTo<K>,
            typename AllocatorT = memory::HeapAllocator>
-    requires memory::AllocatorType<AllocatorT>
+    requires memory::AllocatorHandle<AllocatorT>
   class HashSet
   {
 public:
@@ -3229,14 +3312,33 @@ private:
     Table m_table;
 
 public:
-    HashSet() = default;
+    HashSet()
+      requires std::default_initializable<AllocatorT>
+    = default;
 
-    explicit HashSet(size_type cap) : m_table(cap)
+    explicit HashSet(size_type cap)
+      requires std::default_initializable<AllocatorT>
+        : m_table(cap)
     {
     }
 
-    HashSet(size_type cap, u64 seed) : m_table(cap, seed)
+    HashSet(size_type cap, u64 seed)
+      requires std::default_initializable<AllocatorT>
+        : m_table(cap, seed)
     {
+    }
+
+    explicit HashSet(AllocatorT alloc) noexcept : m_table(std::move(alloc))
+    {
+    }
+
+    HashSet(size_type cap, AllocatorT alloc) : m_table(cap, std::move(alloc))
+    {
+    }
+
+    [[nodiscard]] auto get_allocator() const noexcept -> const AllocatorT &
+    {
+      return m_table.get_allocator();
     }
 
     [[nodiscard]] u64 seed() const noexcept
@@ -3378,8 +3480,8 @@ export namespace au
 
 export namespace au::containers
 {
-  template<typename T, memory::AllocatorType AllocatorT = memory::HeapAllocator>
-    requires memory::AllocatorType<AllocatorT>
+  template<typename T, memory::AllocatorHandle AllocatorT = memory::HeapAllocator>
+    requires memory::AllocatorHandle<AllocatorT>
   class SlotMap
   {
 public:
@@ -3421,7 +3523,18 @@ private:
     u32 m_free_head = FREE_SENTINEL;
 
 public:
-    SlotMap() = default;
+    SlotMap()
+      requires std::default_initializable<AllocatorT>
+    = default;
+
+    explicit SlotMap(AllocatorT alloc) : m_slots(alloc), m_dense(alloc), m_dense_to_slot(std::move(alloc))
+    {
+    }
+
+    [[nodiscard]] auto get_allocator() const noexcept -> const AllocatorT &
+    {
+      return m_dense.get_allocator();
+    }
 
     [[nodiscard]] auto insert(T value) -> Key
     {
@@ -3589,7 +3702,7 @@ public:
 
 export namespace au
 {
-  template<typename T, memory::AllocatorType A = memory::HeapAllocator> using SlotMap = containers::SlotMap<T, A>;
+  template<typename T, memory::AllocatorHandle A = memory::HeapAllocator> using SlotMap = containers::SlotMap<T, A>;
 } // namespace au
 
 export namespace au::containers

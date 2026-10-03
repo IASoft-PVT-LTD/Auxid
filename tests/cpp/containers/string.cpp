@@ -28,6 +28,8 @@ namespace
       add_test("append_and_concat", [this] { return append_and_concat(); });
       add_test("push_pop", [this] { return push_pop(); });
       add_test("arena_basic_string", [this] { return arena_basic_string(); });
+      add_test("arena_string_grows", [this] { return arena_string_grows(); });
+      add_test("arena_string_copy_assign", [this] { return arena_string_copy_assign(); });
       add_test("find_needle_longer_than_haystack",
                [this] { return find_needle_longer_than_haystack(); });
     }
@@ -112,6 +114,68 @@ namespace
 
       heap.append(StringView(" tail"));
       return check(heap.size() > 50u, "arena heap appended");
+    }
+
+    auto arena_string_grows() -> bool
+    {
+      using ArenaRef = memory::AllocatorRef<memory::ArenaAllocator>;
+      using ArenaString = BasicString<ArenaRef>;
+
+      alignas(8) static u8 arena_buffer[4096];
+      memory::ArenaAllocator arena;
+      arena.init(arena_buffer, sizeof(arena_buffer));
+      const ArenaRef arena_ref(arena);
+
+      ArenaString s(arena_ref);
+      for (usize i = 0; i < 40; ++i)
+        s.push_back(static_cast<char>('a' + (i % 26)));
+      if (!check_eq(s.size(), 40u, "grew past the inline buffer"))
+        return false;
+
+      // Growing again goes through ArenaAllocator::realloc.
+      for (usize i = 40; i < 300; ++i)
+        s.push_back(static_cast<char>('a' + (i % 26)));
+      if (!check_eq(s.size(), 300u, "grew a second time"))
+        return false;
+
+      const auto *p = reinterpret_cast<const u8 *>(s.data());
+      if (!check(p >= arena_buffer && p < arena_buffer + sizeof(arena_buffer), "storage lives in the arena"))
+        return false;
+      for (usize i = 0; i < 300; ++i)
+      {
+        if (s.data()[i] != static_cast<char>('a' + (i % 26)))
+          return check(false, "contents survive both growths");
+      }
+      return true;
+    }
+
+    auto arena_string_copy_assign() -> bool
+    {
+      using ArenaRef = memory::AllocatorRef<memory::ArenaAllocator>;
+      using ArenaString = BasicString<ArenaRef>;
+
+      alignas(8) static u8 buffer_a[512];
+      alignas(8) static u8 buffer_b[512];
+      memory::ArenaAllocator arena_a;
+      memory::ArenaAllocator arena_b;
+      arena_a.init(buffer_a, sizeof(buffer_a));
+      arena_b.init(buffer_b, sizeof(buffer_b));
+      const ArenaRef ref_a(arena_a);
+      const ArenaRef ref_b(arena_b);
+
+      ArenaString dst(StringView("destination string, long enough for the heap"), ref_a);
+      const ArenaString src(StringView("source string, also long enough for the heap path"), ref_b);
+      dst = src;
+
+      if (!check(dst.get_allocator() == ref_b, "copy assignment takes the source's allocator"))
+        return false;
+      const auto *p = reinterpret_cast<const u8 *>(dst.data());
+      if (!check(p >= buffer_b && p < buffer_b + sizeof(buffer_b), "copied storage comes from the source's arena"))
+        return false;
+
+      const ArenaString copy(src);
+      return check(copy.get_allocator() == ref_b, "copy construction takes the source's allocator") &&
+             check_eq(dst, src, "contents copied");
     }
   };
 
