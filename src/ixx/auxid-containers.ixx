@@ -474,12 +474,13 @@ public:
 
     // Copies keep the source's allocator, as moves do: the copy constructor
     // takes it and copy assignment switches to it (releasing the old buffer
-    // through the old allocator first).
+    // through the old allocator first). When both sides already share one
+    // allocator the buffer is kept and reused.
     BasicString &operator=(const BasicString &other)
     {
       if (this != &other)
       {
-        if constexpr (!std::is_empty_v<A>)
+        if (!memory::same_allocator(m_allocator, other.m_allocator))
         {
           destroy();
           m_allocator = other.m_allocator;
@@ -1486,7 +1487,8 @@ public:
 
     // Copies keep the source's allocator, as moves do: the copy constructor
     // takes it and copy assignment switches to it (releasing the old buffer
-    // through the old allocator first).
+    // through the old allocator first). When both sides already share one
+    // allocator the buffer is kept and reused.
     CompactVecBase(const CompactVecBase &other) : m_allocator(other.m_allocator)
     {
       reserve_exact(other.m_size);
@@ -1509,7 +1511,7 @@ public:
       if (this != &other)
       {
         clear();
-        if constexpr (!std::is_empty_v<AllocatorT>)
+        if (!memory::same_allocator(m_allocator, other.m_allocator))
         {
           if (m_data)
             m_allocator.free(m_data, m_capacity * sizeof(T), alignof(T));
@@ -2583,11 +2585,28 @@ public:
 
     HashTable &operator=(const HashTable &other)
     {
-      if (this != &other)
+      if (this == &other)
+        return *this;
+
+      // Reuse the buffers when the allocator is shared and the index is large
+      // enough. Only for entries that own nothing: otherwise `other` could live
+      // inside one of the entries this table is about to destroy.
+      if constexpr (std::is_trivially_destructible_v<Entry>)
       {
-        HashTable tmp(other);
-        *this = std::move(tmp);
+        if (m_capacity >= other.m_capacity && memory::same_allocator(get_allocator(), other.get_allocator()))
+        {
+          m_entries = other.m_entries;
+          m_seed = other.m_seed;
+          m_hasher = other.m_hasher;
+          m_eq = other.m_eq;
+          m_key_of = other.m_key_of;
+          drop_deleted_in_place();
+          return *this;
+        }
       }
+
+      HashTable tmp(other);
+      *this = std::move(tmp);
       return *this;
     }
 

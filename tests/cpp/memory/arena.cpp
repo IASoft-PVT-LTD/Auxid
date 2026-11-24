@@ -73,6 +73,49 @@ namespace
   static_assert(DefaultBuildable<HashMap<i32, i32>>);
   static_assert(DefaultBuildable<HashSet<i32>>);
 
+  static_assert(!std::is_default_constructible_v<ArenaAdapter>);
+  static_assert(!std::is_default_constructible_v<AuxidDeleter<i32, ArenaRef>>);
+  static_assert(!std::is_default_constructible_v<Arc<i32, ArenaRef>>);
+  static_assert(!std::is_default_constructible_v<IntrusiveArc<RefCounted, ArenaRef>>);
+  static_assert(!std::is_constructible_v<IntrusiveArc<RefCounted, ArenaRef>, RefCounted *>);
+  static_assert(std::is_default_constructible_v<Arc<i32>>);
+  static_assert(std::is_default_constructible_v<Box<i32>>);
+  static_assert(std::is_constructible_v<IntrusiveArc<RefCounted>, RefCounted *>);
+
+  // A Vec takes a handle directly, like every other container.
+  static_assert(std::is_constructible_v<Vec<i32, ArenaRef>, ArenaRef>);
+
+  // Passing an arena itself to a make_* factory must not fall through to the
+  // overload that allocates on the heap and forwards the arena to T.
+  struct TakesAnything : RefCounted
+  {
+    template<typename... Args> explicit TakesAnything(Args &&...)
+    {
+    }
+  };
+
+  template<typename First>
+  concept MakesFrom = requires(First first) {
+    make_box<TakesAnything>(first, 1);
+    make_box_protected<TakesAnything>(first, 1);
+    make_arc<TakesAnything>(first, 1);
+    make_intrusive_arc<TakesAnything>(first, 1);
+  };
+
+  template<typename First>
+  concept MakesAnyFrom = requires(First first) { make_box<TakesAnything>(first, 1); } ||
+                         requires(First first) { make_box_protected<TakesAnything>(first, 1); } ||
+                         requires(First first) { make_arc<TakesAnything>(first, 1); } ||
+                         requires(First first) { make_arc_protected<TakesAnything>(first, 1); } ||
+                         requires(First first) { make_intrusive_arc<TakesAnything>(first, 1); };
+
+  static_assert(!MakesAnyFrom<memory::ArenaAllocator &>);
+  static_assert(!MakesAnyFrom<const memory::ArenaAllocator &>);
+  static_assert(MakesFrom<ArenaRef>);
+  static_assert(MakesFrom<memory::HeapAllocator>);
+  static_assert(MakesFrom<i32>);
+  static_assert(MakesFrom<memory::ArenaAllocator *>);
+
   [[nodiscard]] auto in_buffer(const void *p, const u8 *buffer, usize length) -> bool
   {
     const auto *b = static_cast<const u8 *>(p);
@@ -101,7 +144,13 @@ namespace
       add_test("hash_map_on_arena", [this] { return hash_map_on_arena(); });
       add_test("slot_map_on_arena", [this] { return slot_map_on_arena(); });
       add_test("clear_after_handles_released", [this] { return clear_after_handles_released(); });
+      add_test("clear_drops_arena_built_objects", [this] { return clear_drops_arena_built_objects(); });
+      add_test("copy_assign_reuses_buffer", [this] { return copy_assign_reuses_buffer(); });
+      add_test("hash_set_copy_assign_reuses_buffer", [this] { return hash_set_copy_assign_reuses_buffer(); });
+      add_test("oversized_request", [this] { return oversized_request(); });
+      add_test("shrink_on_full_arena", [this] { return shrink_on_full_arena(); });
 #if !defined(NDEBUG)
+      add_test("debug_handle_count_threads", [this] { return debug_handle_count_threads(); });
       add_test("debug_handle_count", [this] { return debug_handle_count(); });
 #endif
     }
@@ -179,7 +228,7 @@ namespace
       arena.init(buffer, sizeof(buffer));
       const ArenaRef ref(arena);
 
-      Vec<i32, ArenaRef> a(ArenaAdapter{ref});
+      Vec<i32, ArenaRef> a(ref);
       Vec<i32, ArenaRef> b(ArenaAdapter{ref});
       a.reserve(4);
       b.reserve(4);
@@ -280,9 +329,145 @@ namespace
           return check(false, "old bytes copied and the old block left in place");
       }
 
+      const usize offset_before_shrink = arena.offset;
       auto *shrunk = static_cast<u8 *>(arena.realloc(first, 16, 4, 8));
-      return check_neq(shrunk, first, "shrinking a block that is not last copies too") &&
-             check_eq(shrunk[3], static_cast<u8>(4), "shrink copies min(old, new) bytes");
+      return check_eq(shrunk, first, "a block that is not last shrinks in place") &&
+             check_eq(arena.offset, offset_before_shrink, "shrinking it reclaims nothing") &&
+             check_eq(shrunk[3], static_cast<u8>(4), "shrink keeps the contents");
+    }
+
+    auto shrink_on_full_arena() -> bool
+    {
+      alignas(16) u8 buffer[64];
+      memory::ArenaAllocator arena;
+      arena.init(buffer, sizeof(buffer));
+
+      void *first = arena.alloc(32, 8);
+      (void) arena.alloc(32, 8);
+      return check_eq(arena.realloc(first, 32, 8, 8), first, "shrinking needs no free space");
+    }
+
+    auto oversized_request() -> bool
+    {
+      alignas(16) u8 buffer[64];
+      memory::ArenaAllocator arena;
+      arena.init(buffer, sizeof(buffer));
+      (void) arena.alloc(1, 1);
+
+      constexpr usize max = static_cast<usize>(-1);
+      for (usize size = max - 32; size != 0; ++size)
+      {
+        if (arena.try_alloc(size, 16) != nullptr)
+          return check(false, "a size that wraps when padded must fail");
+      }
+      return check_eq(arena.offset, 1u, "a failed request leaves the offset alone") &&
+             check(arena.try_alloc(48, 16) != nullptr, "the rest of the arena is still usable") &&
+             check(arena.try_alloc(1, 1) == nullptr, "and then it is full");
+    }
+
+    // Objects built in the arena are dropped with it, destructors skipped.
+    auto clear_drops_arena_built_objects() -> bool
+    {
+      struct Node
+      {
+        CompactVec<Node *, ArenaRef> kids;
+
+        explicit Node(ArenaRef ref) : kids(ref)
+        {
+        }
+      };
+
+      alignas(16) u8 buffer[512];
+      memory::ArenaAllocator arena;
+      arena.init(buffer, sizeof(buffer));
+      {
+        const ArenaRef ref(arena);
+        auto *node = new (arena.alloc(sizeof(Node), alignof(Node))) Node(ref);
+        node->kids.push_back(node);
+#if !defined(NDEBUG)
+        if (!check_eq(arena.debug_live_handles(), 1u, "only the handle outside the arena is counted"))
+          return false;
+#endif
+        // A container moved out of the arena is counted again.
+        const CompactVec<Node *, ArenaRef> outside(std::move(node->kids));
+#if !defined(NDEBUG)
+        if (!check_eq(arena.debug_live_handles(), 2u, "a handle moved out of the arena is counted"))
+          return false;
+#endif
+      }
+      arena.clear();
+      return check_eq(arena.offset, 0u, "clear succeeds with handles inside the arena");
+    }
+
+    auto copy_assign_reuses_buffer() -> bool
+    {
+      alignas(16) u8 buffer[1024];
+      memory::ArenaAllocator arena;
+      arena.init(buffer, sizeof(buffer));
+      const ArenaRef ref(arena);
+
+      BasicString<ArenaRef> str(ref);
+      const BasicString<ArenaRef> str_src(StringView("a string that is well past the inline buffer size"), ref);
+      CompactVec<i32, ArenaRef> vec(ref);
+      CompactVec<i32, ArenaRef> vec_src(ref);
+      for (i32 i = 0; i < 16; ++i)
+        vec_src.push_back(i);
+
+      str = str_src;
+      vec = vec_src;
+      const usize offset = arena.offset;
+      for (i32 i = 0; i < 200; ++i)
+      {
+        str = str_src;
+        vec = vec_src;
+      }
+      return check_eq(arena.offset, offset, "assigning within one arena reuses the buffers") &&
+             check_eq(str, str_src, "string contents") && check_eq(vec[15], 15, "vector contents");
+    }
+
+    auto hash_set_copy_assign_reuses_buffer() -> bool
+    {
+      alignas(16) static u8 buffer[1 << 15];
+      memory::ArenaAllocator arena;
+      arena.init(buffer, sizeof(buffer));
+      const ArenaRef ref(arena);
+
+      ArenaHashSet src(ref);
+      for (i32 i = 0; i < 50; ++i)
+        src.insert(i);
+      ArenaHashSet dst(ref);
+      dst.insert(1000);
+      dst = src;
+      dst.insert(1000); // the copy is sized exactly, so one extra key grows it once
+      dst = src;
+      const usize offset = arena.offset;
+
+      // Dirty the destination (extra keys, tombstones) between assignments.
+      for (i32 round = 0; round < 200; ++round)
+      {
+        dst.insert(1000 + round);
+        dst.erase(round % 50);
+        dst = src;
+      }
+      if (!check_eq(arena.offset, offset, "assigning within one arena reuses the buffers") ||
+          !check_eq(dst.size(), src.size(), "size matches the source"))
+        return false;
+      for (i32 i = 0; i < 50; ++i)
+      {
+        if (!dst.contains(i))
+          return check(false, "every key of the source is found");
+      }
+      if (!check_not(dst.contains(1000), "the old keys are gone"))
+        return false;
+
+      // A source with a smaller index than the destination.
+      ArenaHashSet small(ref);
+      small.insert(7);
+      dst = small;
+      if (!check(dst.contains(7) && dst.size() == 1u && !dst.contains(8), "smaller source"))
+        return false;
+      dst = ArenaHashSet(src);
+      return check(dst.contains(49) && dst.size() == 50u, "move assignment still works");
     }
 
     auto compact_vec_on_arena() -> bool
@@ -399,6 +584,33 @@ namespace
     }
 
 #if !defined(NDEBUG)
+    // Handles may be copied and dropped on any thread, e.g. inside an Arc.
+    auto debug_handle_count_threads() -> bool
+    {
+      alignas(16) u8 buffer[256];
+      memory::ArenaAllocator arena;
+      arena.init(buffer, sizeof(buffer));
+      {
+        const auto shared = make_arc<i32>(ArenaRef(arena), 5);
+        auto work = [&shared] {
+          for (i32 i = 0; i < 20000; ++i)
+          {
+            const auto copy = shared;
+            (void) copy;
+          }
+        };
+        auto a = Thread::create(work);
+        auto b = Thread::create(work);
+        if (!check(a.is_ok() && b.is_ok(), "threads start"))
+          return false;
+        a.unwrap().join();
+        b.unwrap().join();
+        if (!check_eq(arena.debug_live_handles(), 1u, "only the owner's handle is left"))
+          return false;
+      }
+      return check_eq(arena.debug_live_handles(), 0u, "all handles released");
+    }
+
     auto debug_handle_count() -> bool
     {
       alignas(16) u8 buffer_a[256];
