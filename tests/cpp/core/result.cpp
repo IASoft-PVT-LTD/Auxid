@@ -9,8 +9,12 @@
 
 #include <auxid/macros.hpp>
 
-#include <expected>
 #include <utility>
+#include <version>
+
+#if defined(__cpp_lib_expected)
+#  include <expected>
+#endif
 
 import auxid;
 import auxid.test;
@@ -73,9 +77,11 @@ namespace
       add_test("err", [this] { return err(); });
       add_test("error_type", [this] { return error_type(); });
       add_test("void_result", [this] { return void_result(); });
+#if defined(__cpp_lib_expected)
       add_test("std_expected_ok", [this] { return std_expected_ok(); });
       add_test("std_expected_err", [this] { return std_expected_err(); });
       add_test("std_expected_void", [this] { return std_expected_void(); });
+#endif
       add_test("error_propagation_moves", [this] { return error_propagation_moves(); });
       add_test("void_result_copies", [this] { return void_result_copies(); });
     }
@@ -158,6 +164,7 @@ namespace
              check_eq(errr.unwrap_err(), "Void operation failed", "unwrap_err matches");
     }
 
+#if defined(__cpp_lib_expected)
     auto std_expected_ok() -> bool
     {
       // ResultT<T, E> round-trips with std::expected<T, E> for matching E;
@@ -206,6 +213,7 @@ namespace
       return check_not(back.has_value(), "!back.has_value()") &&
              check_eq(back.error(), "void-fail", "back.error() matches");
     }
+#endif
   };
 
   const test::AutoRegister<ResultBlock> _registered;

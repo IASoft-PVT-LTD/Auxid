@@ -11,7 +11,7 @@ module;
 
 #include <auxid/macros.hpp>
 
-#include <print>
+#include <format>
 #include <string_view>
 #include <vector>
 
@@ -49,44 +49,44 @@ namespace au::test::impl
 {
   AUXID_API auto print_block_header(std::string_view name) -> void
   {
-    std::println("{}Testing [{}]...{}", console::MAGENTA, name, console::RESET);
+    detail::write_stdout(std::format("{}Testing [{}]...{}\n", console::MAGENTA, name, console::RESET));
   }
 
   AUXID_API auto print_test_progress(std::string_view name) -> void
   {
-    std::print("{}  Testing {}...\n{}", console::YELLOW, name, console::RESET);
+    detail::write_stdout(std::format("{}  Testing {}...\n{}", console::YELLOW, name, console::RESET));
   }
 
   AUXID_API auto print_blank_line() -> void
   {
-    // Not std::println(): the zero-argument overload is a late C++23 addition
-    // (P3142) that libc++ 20 does not ship yet.
-    std::print("\n");
+    detail::write_stdout("\n");
   }
 
   AUXID_API auto print_discovered(usize count) -> void
   {
-    std::print("{}[AUTest] Discovered {} Test Blocks\n\n{}", console::CYAN, count, console::RESET);
+    detail::write_stdout(
+        std::format("{}[AUTest] Discovered {} Test Blocks\n\n{}", console::CYAN, count, console::RESET));
   }
 
   AUXID_API auto print_summary(usize fail_count, usize test_count, usize block_count) -> void
   {
-    std::println("{}\n-----------------------------------\n\t      SUMMARY\n-----------------------------------",
-                 console::GREEN);
+    detail::write_stdout(
+        std::format("{}\n-----------------------------------\n\t      SUMMARY\n-----------------------------------\n",
+                    console::GREEN));
 
     if (fail_count == 0)
     {
-      std::println("\n\tALL TESTS PASSED!\n");
+      detail::write_stdout("\n\tALL TESTS PASSED!\n\n");
     }
     else
     {
       const f64 success_rate =
           test_count == 0 ? 0.0 : (100.0 * static_cast<f64>(test_count - fail_count) / static_cast<f64>(test_count));
-      std::println("{}{} OF {} TESTS FAILED\n{}Success Rate: {:.2f}%", console::RED, fail_count, test_count,
-                   console::YELLOW, success_rate);
+      detail::write_stdout(std::format("{}{} OF {} TESTS FAILED\n{}Success Rate: {:.2f}%\n", console::RED, fail_count,
+                                       test_count, console::YELLOW, success_rate));
     }
 
-    std::println("{}Ran {} test(s) across {} block(s)\n{}-----------------------------------{}", console::MAGENTA,
-                 test_count, block_count, console::GREEN, console::RESET);
+    detail::write_stdout(std::format("{}Ran {} test(s) across {} block(s)\n{}-----------------------------------{}\n",
+                                     console::MAGENTA, test_count, block_count, console::GREEN, console::RESET));
   }
 } // namespace au::test::impl

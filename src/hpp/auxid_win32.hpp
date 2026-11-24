@@ -37,6 +37,12 @@ extern "C"
                                             unsigned(__stdcall *start_address)(void *), void *arglist,
                                             unsigned initflag, unsigned *thrdaddr);
 
+  // CRT / kernel32 — console output
+  long long __cdecl _get_osfhandle(int fd);
+  int __stdcall GetConsoleMode(void *handle, unsigned long *mode);
+  int __stdcall WriteConsoleW(void *console, const void *text, unsigned long units, unsigned long *written,
+                              void *reserved);
+
   // kernel32 — UTF-8 <-> UTF-16
   int __stdcall MultiByteToWideChar(unsigned int code_page, unsigned long flags, const char *multi_byte,
                                     int multi_byte_len, wchar_t *wide, int wide_len);

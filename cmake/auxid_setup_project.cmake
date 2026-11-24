@@ -19,7 +19,12 @@ macro(auxid_setup_project)
             "On macOS, install LLVM Clang via Homebrew (brew install llvm) and use the arm64-darwin preset.")
     endif()
 
-    set(CMAKE_CXX_STANDARD 23)
+    # C++20 is the minimum; a project that sets a newer standard keeps it. Module
+    # interfaces are compiled once, so libauxid and everything importing it must
+    # agree: set CMAKE_CXX_STANDARD before adding Auxid.
+    if(NOT CMAKE_CXX_STANDARD OR CMAKE_CXX_STANDARD MATCHES "^(98|11|14|17)$")
+        set(CMAKE_CXX_STANDARD 20)
+    endif()
     set(CMAKE_CXX_STANDARD_REQUIRED ON)
     set(CMAKE_CXX_EXTENSIONS OFF)
 

@@ -16,8 +16,8 @@ module;
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <format>
 #include <new>
-#include <print>
 #include <string>
 #include <string_view>
 #include <type_traits>
@@ -229,8 +229,8 @@ public:
     {
       if (!value)
       {
-        std::println("{}    {}... {}FAILED{}", console::BLUE, std::string_view(description), console::RED,
-                     console::RESET);
+        detail::write_stdout(std::format("{}    {}... {}FAILED{}\n", console::BLUE, std::string_view(description),
+                                         console::RED, console::RESET));
         return false;
       }
       return true;
@@ -240,8 +240,8 @@ public:
     {
       if (value)
       {
-        std::println("{}    {}... {}FAILED{}", console::BLUE, std::string_view(description), console::RED,
-                     console::RESET);
+        detail::write_stdout(std::format("{}    {}... {}FAILED{}\n", console::BLUE, std::string_view(description),
+                                         console::RED, console::RESET));
         return false;
       }
       return true;
@@ -255,8 +255,8 @@ public:
 private:
     auto print_fail(const char *desc, const String &v1, const String &v2) -> void
     {
-      std::println("{}    {}... {}FAILED\n      Expected: {}\n      Actual:   {}{}", console::BLUE,
-                   std::string_view(desc), console::RED, v2, v1, console::RESET);
+      detail::write_stdout(std::format("{}    {}... {}FAILED\n      Expected: {}\n      Actual:   {}{}\n",
+                                       console::BLUE, std::string_view(desc), console::RED, v2, v1, console::RESET));
     }
 
     Vec<TestUnit> m_units;
