@@ -2,6 +2,7 @@ set(SRC_FILES
     "cpp/main.cpp"
 
     "cpp/memory/arena.cpp"
+    "cpp/memory/arc.cpp"
     "cpp/memory/heap.cpp"
     "cpp/memory/foreign_thread.cpp"
     "cpp/os/time.cpp"

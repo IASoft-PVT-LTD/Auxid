@@ -12,6 +12,7 @@ module;
 #include <auxid/macros.hpp>
 
 #include <atomic>
+#include <concepts>
 #include <cstdlib>
 #include <cstring>
 #include <memory>
@@ -42,7 +43,45 @@ export namespace au::memory
     { v.free(ptr, size, align) } -> std::same_as<void>;
   };
 
-  template<typename T, AllocatorType A = HeapAllocator> class StdAllocatorAdapter
+  // An allocator that containers may hold by value and copy freely: every copy
+  // must allocate from the same place. Stateless allocators (HeapAllocator)
+  // qualify directly; stateful ones such as ArenaAllocator are non-copyable and
+  // are shared through an AllocatorRef handle instead. Containers, the std
+  // adapter, Box and Arc all take an AllocatorHandle.
+  template<typename T>
+  concept AllocatorHandle = AllocatorType<T> && std::copy_constructible<T>;
+
+  // A stateful allocator passed directly instead of through an AllocatorRef.
+  template<typename T>
+  concept UnsharedAllocator = AllocatorType<std::remove_cvref_t<T>> && !AllocatorHandle<std::remove_cvref_t<T>>;
+
+  namespace detail
+  {
+    template<typename... Args> inline constexpr bool LEADS_WITH_UNSHARED_ALLOCATOR = false;
+
+    template<typename First, typename... Rest>
+    inline constexpr bool LEADS_WITH_UNSHARED_ALLOCATOR<First, Rest...> = UnsharedAllocator<First>;
+  } // namespace detail
+
+  // Satisfied unless the first argument is an UnsharedAllocator. The make_*
+  // overloads that take no allocator require this, so make_box<T>(arena) is an
+  // error instead of a heap allocation that passes the arena to T.
+  template<typename... Args>
+  concept NoLeadingUnsharedAllocator = !detail::LEADS_WITH_UNSHARED_ALLOCATOR<Args...>;
+
+  // True when memory from one handle may be freed or reused through the other.
+  // Handles that cannot be compared are assumed to differ.
+  template<AllocatorHandle A> [[nodiscard]] constexpr auto same_allocator(const A &a, const A &b) noexcept -> bool
+  {
+    if constexpr (std::is_empty_v<A>)
+      return true;
+    else if constexpr (std::equality_comparable<A>)
+      return a == b;
+    else
+      return false;
+  }
+
+  template<typename T, AllocatorHandle A = HeapAllocator> class StdAllocatorAdapter
   {
 public:
     using value_type = T;
@@ -54,9 +93,12 @@ public:
     using propagate_on_container_swap = std::true_type;
     using is_always_equal = std::bool_constant<std::is_empty_v<A>>;
 
-    constexpr StdAllocatorAdapter() noexcept = default;
+    constexpr StdAllocatorAdapter() noexcept
+      requires std::default_initializable<A>
+    = default;
 
-    constexpr explicit StdAllocatorAdapter(A alloc) noexcept : m_alloc(alloc)
+    // Implicit, so a Vec can be built straight from a handle: Vec<T, A> v(handle).
+    constexpr StdAllocatorAdapter(A alloc) noexcept : m_alloc(alloc)
     {
     }
 
@@ -252,14 +294,70 @@ public:
 
 export namespace au::memory
 {
+  // The bump state (buffer, length, offset) lives inside the arena, so the arena
+  // is neither copyable nor movable: a copy would hand out memory the original
+  // already handed out, and a move would detach every AllocatorRef bound to the
+  // original. To give an arena to a container (Vec, BasicString, ...) or to
+  // make_box / make_arc, pass AllocatorRef<ArenaAllocator>.
+  //
+  // Debug builds count the live AllocatorRef handles bound to the arena.
+  // Resetting the arena (clear, init) or destroying it while a handle is alive
+  // panics: a container holding the handle (even an empty one) could otherwise
+  // hand out or keep memory that the reset arena will give away again. Handles
+  // stored inside the arena's own buffer are not counted: objects built in the
+  // arena may be dropped by a reset without running their destructors. The
+  // count is atomic because handles, unlike the arena itself, may be copied and
+  // destroyed on any thread. Release builds carry no count and AllocatorRef
+  // stays a plain pointer.
   struct ArenaAllocator
   {
     u8 *buffer = nullptr;
     usize length = 0;
     usize offset = 0;
 
+    ArenaAllocator() noexcept = default;
+
+    ArenaAllocator(const ArenaAllocator &) = delete;
+    auto operator=(const ArenaAllocator &) -> ArenaAllocator & = delete;
+    ArenaAllocator(ArenaAllocator &&) = delete;
+    auto operator=(ArenaAllocator &&) -> ArenaAllocator & = delete;
+
+#if !defined(NDEBUG)
+    ~ArenaAllocator()
+    {
+      if (debug_live_handles() != 0)
+        panic_at("ArenaAllocator destroyed while AllocatorRef handles are still alive", __FILE__, __LINE__);
+    }
+
+    // Returns whether the handle at `handle` was counted; only a counted handle
+    // is released.
+    [[nodiscard]] auto debug_retain_handle(const void *handle) noexcept -> bool
+    {
+      const uintptr_t base = reinterpret_cast<uintptr_t>(buffer);
+      const uintptr_t addr = reinterpret_cast<uintptr_t>(handle);
+      if (addr >= base && addr - base < length)
+        return false;
+      m_live_handles.fetch_add(1, std::memory_order_relaxed);
+      return true;
+    }
+
+    auto debug_release_handle() noexcept -> void
+    {
+      m_live_handles.fetch_sub(1, std::memory_order_release);
+    }
+
+    [[nodiscard]] auto debug_live_handles() const noexcept -> usize
+    {
+      return m_live_handles.load(std::memory_order_acquire);
+    }
+#endif
+
     auto init(u8 *buf, usize len) -> void
     {
+#if !defined(NDEBUG)
+      if (debug_live_handles() != 0)
+        panic_at("ArenaAllocator::init: AllocatorRef handles are still alive", __FILE__, __LINE__);
+#endif
       buffer = buf;
       length = len;
       offset = 0;
@@ -287,26 +385,47 @@ export namespace au::memory
     {
       uintptr_t curr_addr = reinterpret_cast<uintptr_t>(buffer) + offset;
       uintptr_t misalignment = curr_addr & (align - 1);
-      ptrdiff_t padding = (align - misalignment) & (align - 1);
+      usize padding = (align - misalignment) & (align - 1);
 
-      usize total = size + padding;
-
-      if (offset > length || total > length - offset)
+      if (offset > length || padding > length - offset || size > length - offset - padding)
         return nullptr;
 
       void *ptr = buffer + offset + padding;
-      offset += total;
+      offset += padding + size;
       return ptr;
     }
 
+    // The most recent allocation ends exactly at `offset`, so it grows or shrinks
+    // in place when the buffer has room. Any other block shrinks in place (its
+    // tail is not reclaimed) and is copied into a fresh allocation to grow; the
+    // old block stays where it is (arenas never free individually). A block not
+    // aligned to `align` is always copied. Panics on exhaustion, like alloc().
     [[nodiscard]] inline auto realloc(void *ptr, usize old_size, usize new_size, usize align) -> void *
     {
-      AU_UNUSED(ptr);
-      AU_UNUSED(old_size);
-      AU_UNUSED(new_size);
-      AU_UNUSED(align);
-      panic_at("ArenaAllocator::realloc: not supported", __FILE__, __LINE__);
-      return nullptr;
+      if (!ptr)
+        return alloc(new_size, align);
+
+      const uintptr_t base = reinterpret_cast<uintptr_t>(buffer);
+      const uintptr_t addr = reinterpret_cast<uintptr_t>(ptr);
+      const bool is_last = addr >= base && addr + old_size == base + offset;
+      if ((addr & (align - 1)) == 0)
+      {
+        if (is_last)
+        {
+          const usize start = static_cast<usize>(addr - base);
+          if (new_size <= length - start)
+          {
+            offset = start + new_size;
+            return ptr;
+          }
+        }
+        else if (new_size <= old_size)
+          return ptr;
+      }
+
+      void *fresh = alloc(new_size, align);
+      std::memcpy(fresh, ptr, old_size < new_size ? old_size : new_size);
+      return fresh;
     }
 
     inline auto free(void *ptr, usize size, usize align) -> void
@@ -318,6 +437,10 @@ export namespace au::memory
 
     inline auto clear() -> void
     {
+#if !defined(NDEBUG)
+      if (debug_live_handles() != 0)
+        panic_at("ArenaAllocator::clear: AllocatorRef handles are still alive", __FILE__, __LINE__);
+#endif
       offset = 0;
     }
 
@@ -325,9 +448,146 @@ export namespace au::memory
     {
       return a.buffer == b.buffer;
     }
+
+#if !defined(NDEBUG)
+private:
+    std::atomic<usize> m_live_handles{0};
+#endif
   };
 
   static_assert(AllocatorType<ArenaAllocator>, "Allocator class must conform to AllocatorT");
+} // namespace au::memory
+
+export namespace au::memory
+{
+  // Non-owning, copyable handle to a stateful allocator. Every copy points at
+  // the same allocator, so containers that copy their allocator (Vec through
+  // StdAllocatorAdapter, BasicString, Box, Arc) all draw from one shared state.
+  // Two handles compare equal when they point at the same allocator. The
+  // referenced allocator must outlive every handle and every allocation made
+  // through it. There is no default (null) handle. In debug builds the handle
+  // registers its address with allocators that track handles (ArenaAllocator),
+  // so it must not be relocated bytewise; in release builds it is a trivially
+  // copyable pointer.
+  template<AllocatorType A> class AllocatorRef
+  {
+public:
+    using allocator_type = A;
+
+#if defined(NDEBUG)
+    constexpr explicit AllocatorRef(A &alloc) noexcept : m_alloc(&alloc)
+    {
+    }
+#else
+    explicit AllocatorRef(A &alloc) noexcept : m_alloc(&alloc)
+    {
+      retain();
+    }
+
+    AllocatorRef(const AllocatorRef &other) noexcept : m_alloc(other.m_alloc)
+    {
+      retain();
+    }
+
+    auto operator=(const AllocatorRef &other) noexcept -> AllocatorRef &
+    {
+      if (m_alloc != other.m_alloc)
+      {
+        release();
+        m_alloc = other.m_alloc;
+        retain();
+      }
+      return *this;
+    }
+
+    ~AllocatorRef()
+    {
+      release();
+    }
+#endif
+
+    [[nodiscard]] inline auto alloc(usize size) const -> void *
+    {
+      return m_alloc->alloc(size);
+    }
+
+    [[nodiscard]] inline auto alloc(usize size, usize align) const -> void *
+    {
+      return m_alloc->alloc(size, align);
+    }
+
+    [[nodiscard]] inline auto try_alloc(usize size) const -> void *
+      requires requires(A &a, usize s) {
+        { a.try_alloc(s) } -> std::same_as<void *>;
+      }
+    {
+      return m_alloc->try_alloc(size);
+    }
+
+    [[nodiscard]] inline auto try_alloc(usize size, usize align) const -> void *
+      requires requires(A &a, usize s) {
+        { a.try_alloc(s, s) } -> std::same_as<void *>;
+      }
+    {
+      return m_alloc->try_alloc(size, align);
+    }
+
+    [[nodiscard]] inline auto realloc(void *ptr, usize old_size, usize new_size, usize align) const -> void *
+    {
+      return m_alloc->realloc(ptr, old_size, new_size, align);
+    }
+
+    inline auto free(void *ptr, usize size, usize align) const -> void
+    {
+      m_alloc->free(ptr, size, align);
+    }
+
+    [[nodiscard]] constexpr auto get() const noexcept -> A &
+    {
+      return *m_alloc;
+    }
+
+    [[nodiscard]] friend constexpr auto operator==(const AllocatorRef &a, const AllocatorRef &b) noexcept -> bool
+    {
+      return a.m_alloc == b.m_alloc;
+    }
+
+private:
+#if !defined(NDEBUG)
+    static constexpr bool TRACKS_HANDLES = requires(A &a, const void *handle) {
+      { a.debug_retain_handle(handle) } -> std::same_as<bool>;
+      a.debug_release_handle();
+    };
+
+    auto retain() noexcept -> void
+    {
+      if constexpr (TRACKS_HANDLES)
+        m_counted = m_alloc->debug_retain_handle(this);
+    }
+
+    auto release() noexcept -> void
+    {
+      if constexpr (TRACKS_HANDLES)
+      {
+        if (m_counted)
+          m_alloc->debug_release_handle();
+        m_counted = false;
+      }
+    }
+
+    bool m_counted = false;
+#endif
+
+    A *m_alloc;
+  };
+
+  static_assert(AllocatorHandle<AllocatorRef<ArenaAllocator>>, "AllocatorRef must be a copyable allocator");
+  static_assert(!AllocatorHandle<ArenaAllocator>, "ArenaAllocator must only be shared through AllocatorRef");
+#if defined(NDEBUG)
+  static_assert(std::is_trivially_copyable_v<AllocatorRef<ArenaAllocator>> &&
+                    sizeof(AllocatorRef<ArenaAllocator>) == sizeof(ArenaAllocator *),
+                "AllocatorRef must be a plain pointer in release builds");
+#endif
 } // namespace au::memory
 
 export namespace au::memory
@@ -336,7 +596,9 @@ export namespace au::memory
   {
     AUXID_NO_UNIQUE_ADDRESS Allocator m_alloc{};
 
-    constexpr AuxidDeleter() noexcept = default;
+    constexpr AuxidDeleter() noexcept
+      requires std::default_initializable<Allocator>
+    = default;
 
     constexpr explicit AuxidDeleter(Allocator alloc) noexcept : m_alloc(std::move(alloc))
     {
@@ -356,7 +618,7 @@ export namespace au::memory
 
   template<typename T, typename Deleter = AuxidDeleter<T, HeapAllocator>> using Box = std::unique_ptr<T, Deleter>;
 
-  template<typename T, AllocatorType Allocator = HeapAllocator, typename... Args>
+  template<typename T, AllocatorHandle Allocator = HeapAllocator, typename... Args>
   [[nodiscard]] auto make_box(Allocator alloc, Args &&...args) -> Box<T, AuxidDeleter<T, Allocator>>
   {
     void *mem = alloc.alloc(sizeof(T), alignof(T));
@@ -367,12 +629,13 @@ export namespace au::memory
   }
 
   template<typename T, typename... Args>
+    requires NoLeadingUnsharedAllocator<Args...>
   [[nodiscard]] auto make_box(Args &&...args) -> Box<T, AuxidDeleter<T, HeapAllocator>>
   {
     return make_box<T, HeapAllocator>(HeapAllocator{}, std::forward<Args>(args)...);
   }
 
-  template<typename T, AllocatorType Allocator = HeapAllocator, typename... Args>
+  template<typename T, AllocatorHandle Allocator = HeapAllocator, typename... Args>
   [[nodiscard]] auto make_box_protected(Allocator alloc, Args &&...args) -> Box<T, AuxidDeleter<T, Allocator>>
   {
     struct Enabler : public T
@@ -390,6 +653,7 @@ export namespace au::memory
   }
 
   template<typename T, typename... Args>
+    requires NoLeadingUnsharedAllocator<Args...>
   [[nodiscard]] auto make_box_protected(Args &&...args) -> Box<T, AuxidDeleter<T, HeapAllocator>>
   {
     return make_box_protected<T, HeapAllocator>(HeapAllocator{}, std::forward<Args>(args)...);
@@ -398,7 +662,7 @@ export namespace au::memory
 
 export namespace au::memory
 {
-  template<typename T, AllocatorType Allocator = HeapAllocator> class Arc
+  template<typename T, AllocatorHandle Allocator = HeapAllocator> class Arc
   {
 public:
     struct ControlBlock
@@ -411,7 +675,9 @@ public:
       }
     };
 
-    constexpr Arc() noexcept = default;
+    constexpr Arc() noexcept
+      requires std::default_initializable<Allocator>
+    = default;
 
     ~Arc()
     {
@@ -431,24 +697,14 @@ public:
     auto operator=(const Arc &other) noexcept -> Arc &
     {
       if (this != &other)
-      {
-        release();
-        m_block = other.m_block;
-        m_alloc = other.m_alloc;
-        retain();
-      }
+        replace(Arc(other));
       return *this;
     }
 
     auto operator=(Arc &&other) noexcept -> Arc &
     {
       if (this != &other)
-      {
-        release();
-        m_block = other.m_block;
-        m_alloc = other.m_alloc;
-        other.m_block = nullptr;
-      }
+        replace(Arc(std::move(other)));
       return *this;
     }
 
@@ -498,6 +754,16 @@ public:
     }
 
 private:
+    // `incoming` is a separate object and the old block is released last: the
+    // assignment source may live inside that block (node = node->next).
+    auto replace(Arc &&incoming) noexcept -> void
+    {
+      const Arc outgoing(std::move(*this));
+      m_block = incoming.m_block;
+      m_alloc = incoming.m_alloc;
+      incoming.m_block = nullptr;
+    }
+
     auto retain() const noexcept -> void
     {
       if (m_block)
@@ -520,7 +786,7 @@ private:
     AUXID_NO_UNIQUE_ADDRESS Allocator m_alloc{};
   };
 
-  template<typename T, AllocatorType Allocator = HeapAllocator, typename... Args>
+  template<typename T, AllocatorHandle Allocator = HeapAllocator, typename... Args>
   [[nodiscard]] auto make_arc(Allocator alloc, Args &&...args) -> Arc<T, Allocator>
   {
     using CB = typename Arc<T, Allocator>::ControlBlock;
@@ -531,7 +797,9 @@ private:
     return Arc<T, Allocator>(cb, alloc);
   }
 
-  template<typename T, typename... Args> [[nodiscard]] auto make_arc(Args &&...args) -> Arc<T, HeapAllocator>
+  template<typename T, typename... Args>
+    requires NoLeadingUnsharedAllocator<Args...>
+  [[nodiscard]] auto make_arc(Args &&...args) -> Arc<T, HeapAllocator>
   {
     return make_arc<T, HeapAllocator>(HeapAllocator{}, std::forward<Args>(args)...);
   }
@@ -539,7 +807,7 @@ private:
   // Known limitation: unlike make_box_protected (which placement-constructs the
   // Enabler directly), this constructs T's ControlBlock storage FROM an Enabler
   // temporary — so T additionally needs an accessible copy/move constructor.
-  template<typename T, AllocatorType Allocator = HeapAllocator, typename... Args>
+  template<typename T, AllocatorHandle Allocator = HeapAllocator, typename... Args>
   [[nodiscard]] auto make_arc_protected(Allocator alloc, Args &&...args) -> Arc<T, Allocator>
   {
     struct Enabler : public T
@@ -557,7 +825,9 @@ private:
     return Arc<T, Allocator>(cb, alloc);
   }
 
-  template<typename T, typename... Args> [[nodiscard]] auto make_arc_protected(Args &&...args) -> Arc<T, HeapAllocator>
+  template<typename T, typename... Args>
+    requires NoLeadingUnsharedAllocator<Args...>
+  [[nodiscard]] auto make_arc_protected(Args &&...args) -> Arc<T, HeapAllocator>
   {
     return make_arc_protected<T, HeapAllocator>(HeapAllocator{}, std::forward<Args>(args)...);
   }
@@ -600,14 +870,22 @@ private:
     mutable std::atomic<u32> m_refs{0};
   };
 
-  template<typename T, AllocatorType Allocator = HeapAllocator> class IntrusiveArc
+  template<typename T, AllocatorHandle Allocator = HeapAllocator> class IntrusiveArc
   {
     static_assert(std::is_base_of_v<RefCounted, T>, "IntrusiveArc<T> requires T : RefCounted");
 
 public:
-    constexpr IntrusiveArc() noexcept = default;
+    constexpr IntrusiveArc() noexcept
+      requires std::default_initializable<Allocator>
+    = default;
 
-    explicit IntrusiveArc(T *ptr, Allocator alloc = Allocator{}) noexcept : m_ptr(ptr), m_alloc(alloc)
+    explicit IntrusiveArc(T *ptr) noexcept
+      requires std::default_initializable<Allocator>
+        : IntrusiveArc(ptr, Allocator{})
+    {
+    }
+
+    explicit IntrusiveArc(T *ptr, Allocator alloc) noexcept : m_ptr(ptr), m_alloc(alloc)
     {
       if (m_ptr)
         m_ptr->arc_retain();
@@ -632,25 +910,14 @@ public:
     auto operator=(const IntrusiveArc &o) noexcept -> IntrusiveArc &
     {
       if (this != &o)
-      {
-        release();
-        m_ptr = o.m_ptr;
-        m_alloc = o.m_alloc;
-        if (m_ptr)
-          m_ptr->arc_retain();
-      }
+        replace(IntrusiveArc(o));
       return *this;
     }
 
     auto operator=(IntrusiveArc &&o) noexcept -> IntrusiveArc &
     {
       if (this != &o)
-      {
-        release();
-        m_ptr = o.m_ptr;
-        m_alloc = o.m_alloc;
-        o.m_ptr = nullptr;
-      }
+        replace(IntrusiveArc(std::move(o)));
       return *this;
     }
 
@@ -696,6 +963,15 @@ public:
     }
 
 private:
+    // Same ordering as Arc::replace.
+    auto replace(IntrusiveArc &&incoming) noexcept -> void
+    {
+      const IntrusiveArc outgoing(std::move(*this));
+      m_ptr = incoming.m_ptr;
+      m_alloc = incoming.m_alloc;
+      incoming.m_ptr = nullptr;
+    }
+
     auto release() noexcept -> void
     {
       if (m_ptr && m_ptr->arc_release())
@@ -709,7 +985,7 @@ private:
     AUXID_NO_UNIQUE_ADDRESS Allocator m_alloc{};
   };
 
-  template<typename T, AllocatorType Allocator = HeapAllocator, typename... Args>
+  template<typename T, AllocatorHandle Allocator = HeapAllocator, typename... Args>
   [[nodiscard]] auto make_intrusive_arc(Allocator alloc, Args &&...args) -> IntrusiveArc<T, Allocator>
   {
     void *mem = alloc.alloc(sizeof(T), alignof(T));
@@ -720,6 +996,7 @@ private:
   }
 
   template<typename T, typename... Args>
+    requires NoLeadingUnsharedAllocator<Args...>
   [[nodiscard]] auto make_intrusive_arc(Args &&...args) -> IntrusiveArc<T, HeapAllocator>
   {
     return make_intrusive_arc<T, HeapAllocator>(HeapAllocator{}, std::forward<Args>(args)...);
