@@ -9,7 +9,8 @@ on:
 
 jobs:
   build-linux:
-    runs-on: ubuntu-latest
+    # apt.llvm.org has no LLVM 20 packages for Ubuntu 26.04 (ubuntu-latest).
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
     strategy:
@@ -98,7 +99,8 @@ jobs:
           if-no-files-found: error
 
   sanitizers-linux:
-    runs-on: ubuntu-latest
+    # apt.llvm.org has no LLVM 20 packages for Ubuntu 26.04 (ubuntu-latest).
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
     strategy:
@@ -182,7 +184,9 @@ jobs:
       - uses: ilammy/msvc-dev-cmd@v1
 
       - name: Install LLVM and Ninja
-        run: choco install llvm ninja -y
+        # upgrade, not install: the image preinstalls Clang 20, and the VS 2026
+        # STL needs Clang 22 or newer.
+        run: choco upgrade llvm ninja -y
 
       - name: Ensure Chocolatey LLVM on PATH
         run: |
