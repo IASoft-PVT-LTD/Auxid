@@ -14,7 +14,6 @@ module;
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
-#include <expected>
 #include <format>
 #include <memory>
 #include <mutex>
@@ -23,6 +22,11 @@ module;
 #include <string_view>
 #include <type_traits>
 #include <utility>
+#include <version>
+
+#if defined(__cpp_lib_expected)
+#  include <expected>
+#endif
 
 #if defined(_MSC_VER) && !defined(__clang__)
 #  include <intrin.h>
@@ -152,6 +156,15 @@ export namespace au
   [[noreturn]] AUXID_API auto panic(const char *msg, std::source_location loc = std::source_location::current()) -> void;
 } // namespace au
 
+export namespace au::detail
+{
+  // Writes UTF-8 text to the standard streams, where C++23 code would use
+  // std::print. A Windows console receives it as UTF-16, so it shows correctly
+  // whatever the active code page. Never allocates.
+  AUXID_API auto write_stdout(std::string_view text) noexcept -> void;
+  AUXID_API auto write_stderr(std::string_view text) noexcept -> void;
+} // namespace au::detail
+
 export namespace au
 {
   template<typename T, typename E> class [[nodiscard]] ResultT
@@ -181,6 +194,7 @@ public:
     {
     }
 
+#if defined(__cpp_lib_expected)
     constexpr ResultT(const std::expected<T, E> &exp) : m_is_ok(exp.has_value())
     {
       if (m_is_ok)
@@ -210,6 +224,7 @@ public:
         return std::expected<T, E>{std::move(m_val)};
       return std::expected<T, E>{std::unexpect, std::move(m_err)};
     }
+#endif
 
     constexpr ~ResultT()
     {
@@ -480,6 +495,7 @@ public:
       return *this;
     }
 
+#if defined(__cpp_lib_expected)
     constexpr ResultT(const std::expected<void, E> &exp) : m_is_ok(exp.has_value())
     {
       if (!m_is_ok)
@@ -505,6 +521,7 @@ public:
         return std::expected<void, E>{};
       return std::expected<void, E>{std::unexpect, std::move(m_err)};
     }
+#endif
 
     constexpr ~ResultT()
     {

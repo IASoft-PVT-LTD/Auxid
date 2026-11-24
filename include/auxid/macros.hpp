@@ -11,16 +11,19 @@
 
 #include <auxid/api.hpp>
 
+// std::move in the AU_TRY macros.
+#include <utility>
+
 #if !defined(__clang__) && !defined(_MSC_VER) && !defined(__GNUC__)
 #  error "Auxid requires Clang/Clang-CL, native MSVC, or GCC."
 #endif
 
 #if defined(_MSC_VER) && !defined(__clang__)
-#  if !defined(_MSVC_LANG) || _MSVC_LANG < 202302L
-#    error "Auxid requires C++23 or newer."
+#  if !defined(_MSVC_LANG) || _MSVC_LANG < 202002L
+#    error "Auxid requires C++20 or newer."
 #  endif
-#elif __cplusplus < 202302L
-#  error "Auxid requires C++23 or newer."
+#elif __cplusplus < 202002L
+#  error "Auxid requires C++20 or newer."
 #endif
 
 #if defined(__x86_64__) || defined(_M_X64) || defined(_M_AMD64)

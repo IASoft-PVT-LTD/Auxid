@@ -3,7 +3,7 @@
   <br/>
 
   <img src="https://img.shields.io/badge/license-Apache_2.0-darkblue.svg" alt="License"/>
-  <img src="https://img.shields.io/badge/standard-C%2B%2B23-darkred.svg" alt="C++ Standard"/>
+  <img src="https://img.shields.io/badge/standard-C%2B%2B20_and_up-darkred.svg" alt="C++ Standard"/>
   <img src="https://img.shields.io/badge/compiler-MSVC | Clang | GCC-darkgreen.svg" alt="Compiler"/>
   <img src="https://img.shields.io/badge/platforms-Linux | Windows | macOS | WASM-darkslateblue.svg" alt="Platforms"/>
 
@@ -14,9 +14,9 @@
 
 ## Overview
 
-Auxid is a platform for building modern, high-performance C++ applications using [**Rigid C++**](https://github.com/I-A-S/Rigid-Cpp) principles, delivered as a **C++23 named module**.
+Auxid is a platform for building modern, high-performance C++ applications using [**Rigid C++**](https://github.com/I-A-S/Rigid-Cpp) principles, delivered as a **C++20 named module**.
 
-[**Rigid C++**](https://github.com/I-A-S/Rigid-Cpp) keeps runtime strict and predictable; no exceptions, no RTTI, explicit allocators, and a two-tier error model (`Result<T>` for recoverable failures, `panic()` for bugs); while using C++23's compile-time toolkit (modules, concepts) instead of deep template metaprogramming. Under **the Pragmatic STL Pact**, LibAuxid composes with the standard library when layout and error handling already fit (`std::vector` via `StdAllocatorAdapter`, non-throwing `std::filesystem`, vocabulary types and ranges); where they don't; node-based maps, global heap ownership, throwing I/O; it ships DOD-native replacements.
+[**Rigid C++**](https://github.com/I-A-S/Rigid-Cpp) keeps runtime strict and predictable; no exceptions, no RTTI, explicit allocators, and a two-tier error model (`Result<T>` for recoverable failures, `panic()` for bugs); while using C++20's compile-time toolkit (modules, concepts) instead of deep template metaprogramming. Under **the Pragmatic STL Pact**, LibAuxid composes with the standard library when layout and error handling already fit (`std::vector` via `StdAllocatorAdapter`, non-throwing `std::filesystem`, vocabulary types and ranges); where they don't; node-based maps, global heap ownership, throwing I/O; it ships DOD-native replacements.
 
 ## Highlights
 
@@ -24,7 +24,7 @@ Auxid is a platform for building modern, high-performance C++ applications using
 - **No exceptions, ever.** `libauxid` propagates `-fno-exceptions` / `/EHs-c-` to every consumer via `PUBLIC` compile options. Errors flow through `Result<T>` and `AU_TRY`.
 - **Strong allocators.** Integrated [rpmalloc](https://github.com/mjansson/rpmalloc) thread-caching heap, plus an `ArenaAllocator` for scoped bump-allocation. Both satisfy a single `memory::AllocatorType` concept, and `StdAllocatorAdapter` plugs them into standard containers. The arena keeps its bump state inside itself, so it is non-copyable; containers share it through a `memory::AllocatorRef` handle (`Vec<T, memory::AllocatorRef<memory::ArenaAllocator>>`), and passing the arena by value is a compile error. Every container takes a `memory::AllocatorHandle` (a copyable allocator); containers on an `AllocatorRef` must be built from one, since the handle has no default. Debug builds panic if an arena is cleared or destroyed while a handle to it is still alive; handles stored inside the arena itself do not count, so arena-built objects can be dropped by `clear()` without running destructors.
 - **Foreign-thread safe.** `HeapAllocator` works from threads Auxid never touched (embedded-engine callbacks, OS thread pools): rpmalloc lazily creates the thread heap on first allocation and finalizes it on thread exit; cross-thread frees route through atomic deferred lists. The thread guards remain the normal path — they also own the per-thread logger.
-- **STL interop built in.** `Vec<T>` is `std::vector<T, StdAllocatorAdapter<T, A>>`, `Pair` / `Span` are direct std aliases, `Result<T, E>` round-trips with `std::expected`, `Option<T>` round-trips with `std::optional`, and `auxid::filesystem` wraps `std::filesystem` with non-throwing `Result<T>` returns.
+- **STL interop built in.** `Vec<T>` is `std::vector<T, StdAllocatorAdapter<T, A>>`, `Pair` / `Span` are direct std aliases, `Result<T, E>` round-trips with `std::expected` (in C++23 and later), `Option<T>` round-trips with `std::optional`, and `auxid::filesystem` wraps `std::filesystem` with non-throwing `Result<T>` returns.
 - **Cache-friendly custom containers.** SwissTable-style `HashMap` / `HashSet` (SIMD 16-slot group probing with SSE2/NEON/WASM SIMD128, triangular probing, per-instance random seed) over a dense entry array, `String` with little-endian SSO, `CompactVec<T>` (u32 index) and `TinyVec<T>` (u16 index), lock-free `SpscQueue<T, N>`.
 - **Standard-algorithm friendly iterators.** `Vec`, `String`, `StringView`, and `Span` model `std::contiguous_iterator` and `std::ranges::contiguous_range`; `StringView` is a `std::ranges::borrowed_range`. `std::ranges::sort` on a `Vec<i32>` or a `String` Just Works!
 - **Lightweight smart pointers.** `Box<T>` (allocator-aware `unique_ptr`), `Arc<T>` (atomic shared), `IntrusiveArc<T>` over a `RefCounted` base.
@@ -74,7 +74,11 @@ target_link_libraries(my_app PRIVATE libauxid)
 > [!NOTE]
 > **Compiler requirements**
 >
-> Auxid hard-errors at configure time on anything other than **Clang**, **Clang-CL**, **native MSVC**, or **GCC 15.2+** (see [cmake/auxid_setup_project.cmake](cmake/auxid_setup_project.cmake)). Your consumer code must compile at C++23, and `libauxid` will propagate `-fno-exceptions` / `/EHs-c-` to it - this is a property of the library, not opt-in.
+> Auxid hard-errors at configure time on anything other than **Clang**, **Clang-CL**, **native MSVC**, or **GCC 15.2+** (see [cmake/auxid_setup_project.cmake](cmake/auxid_setup_project.cmake)). Auxid needs C++20 or newer, and `libauxid` will propagate `-fno-exceptions` / `/EHs-c-` to it - this is a property of the library, not opt-in.
+>
+> **Choosing a standard**
+>
+> Auxid builds as C++20 unless your project asks for more. A module is compiled once, so Auxid and the code importing it must use the same standard: to use a newer one, set `CMAKE_CXX_STANDARD` before `FetchContent_MakeAvailable(auxid)`, e.g. `set(CMAKE_CXX_STANDARD 23)`. The `std::expected` conversions on `Result` are there when your standard library provides `std::expected`.
 
 ## Example
 
@@ -133,7 +137,7 @@ Notes:
 │   ├── CMakeLists.txt                # Builds the TestSuite executable
 │   └── cpp/                          # Unit tests grouped by feature
 ├── cmake/
-│   ├── auxid_setup_project.cmake     # C++23 + C11 + arch defines + WASM tweaks
+│   ├── auxid_setup_project.cmake     # C++20 minimum + C11 + arch defines + WASM tweaks
 │   └── toolchains/                   # Per-target toolchain files
 ├── CMakeLists.txt                    # Top-level; calls auxid_setup_project()
 ├── CMakePresets.json                 # Configure / build / test presets
@@ -163,7 +167,7 @@ Notes:
   | `arm64-windows`         | Visual Studio 18 2026   | Windows ARM64 (VS / MSVC)       |
   | `wasm32-emscripten`     | Ninja Multi-Config      | WebAssembly (Emscripten)        |
 
-- **CI** ([.github/workflows/ci.yaml](.github/workflows/ci.yaml)) currently covers `x64-linux`, `arm64-darwin`, `x64-windows`, `x64-windows-clang-shared`, `x64-windows-mingw-gcc`, and `wasm32-emscripten` on every push and PR to `main`.
+- **CI** ([.github/workflows/ci.yaml](.github/workflows/ci.yaml)) currently covers `x64-linux`, `arm64-darwin`, `x64-windows`, `x64-windows-clang-shared`, `x64-windows-mingw-gcc`, and `wasm32-emscripten` on every push and PR to `main`. The Linux, macOS and MSVC lanes run at both C++20 and C++23; the others run at C++20.
 
 ## Building & testing locally
 

@@ -40,7 +40,6 @@ if(Auxid_BUILD_SHARED AND WIN32)
     )
 endif()
 if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND WIN32)
-    target_link_libraries(TestSuite PRIVATE stdc++exp)
     # Runtime DLLs must stay dynamic (see the mingw toolchain file for the
     # rpmalloc/emutls recursion that static linking causes). Pin the
     # toolchain's exact DLLs beside the exe so they never resolve from PATH.

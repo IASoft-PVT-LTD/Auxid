@@ -17,6 +17,7 @@ jobs:
       fail-fast: false
       matrix:
         target: [x64-linux]
+        std: [20, 23]
         
     steps:
       - uses: actions/checkout@v4
@@ -45,7 +46,7 @@ jobs:
           g++-15 --version
 
       - name: Configure
-        run: cmake --preset ${{ matrix.target }}
+        run: cmake --preset ${{ matrix.target }} -DCMAKE_CXX_STANDARD=${{ matrix.std }}
 
       - name: Build
         run: cmake --build --preset ${{ matrix.target }} --config Release
@@ -56,7 +57,7 @@ jobs:
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: linux-${{ matrix.target }}-Release
+          name: linux-${{ matrix.target }}-cxx${{ matrix.std }}-Release
           path: |
             out/build/${{ matrix.target }}/bin/Release/
             out/build/${{ matrix.target }}/lib/Release/
@@ -70,6 +71,7 @@ jobs:
       fail-fast: false
       matrix:
         target: [arm64-darwin]
+        std: [20, 23]
 
     steps:
       - uses: actions/checkout@v4
@@ -81,7 +83,7 @@ jobs:
           $(brew --prefix llvm)/bin/clang++ --version
 
       - name: Configure
-        run: cmake --preset ${{ matrix.target }}
+        run: cmake --preset ${{ matrix.target }} -DCMAKE_CXX_STANDARD=${{ matrix.std }}
 
       - name: Build
         run: cmake --build --preset ${{ matrix.target }} --config Release
@@ -92,7 +94,7 @@ jobs:
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: macos-${{ matrix.target }}-Release
+          name: macos-${{ matrix.target }}-cxx${{ matrix.std }}-Release
           path: |
             out/build/${{ matrix.target }}/bin/Release/
             out/build/${{ matrix.target }}/lib/Release/
@@ -149,6 +151,7 @@ jobs:
       fail-fast: false
       matrix:
         target: [x64-windows-msvc]
+        std: [20, 23]
 
     steps:
       - uses: actions/checkout@v4
@@ -156,7 +159,7 @@ jobs:
       - uses: ilammy/msvc-dev-cmd@v1
 
       - name: Configure
-        run: cmake --preset ${{ matrix.target }}
+        run: cmake --preset ${{ matrix.target }} -DCMAKE_CXX_STANDARD=${{ matrix.std }}
 
       - name: Build
         run: cmake --build --preset ${{ matrix.target }} --config Release
@@ -167,7 +170,7 @@ jobs:
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: windows-${{ matrix.target }}-Release
+          name: windows-${{ matrix.target }}-cxx${{ matrix.std }}-Release
           path: |
             out/build/${{ matrix.target }}/bin/Release/
             out/build/${{ matrix.target }}/lib/Release/

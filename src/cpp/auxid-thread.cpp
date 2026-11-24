@@ -17,7 +17,7 @@ module;
 #include <cstdio>
 #include <cstdlib>
 #include <format>
-#include <print>
+#include <string_view>
 
 #if !AU_PLATFORM_WINDOWS
 #  include <pthread.h>
@@ -307,23 +307,36 @@ namespace au
 
   AUXID_API auto Logger::default_handler(const char *msg, ELevel level) -> void
   {
+    StringView prefix;
     switch (level)
     {
     case LEVEL_TRACE:
-      std::println(stdout, CC_RESET "[TRCE]: {}" CC_RESET, msg);
+      prefix = CC_RESET "[TRCE]: ";
       break;
     case LEVEL_DEBUG:
-      std::println(stdout, CC_CYAN "[DBUG]: {}" CC_RESET, msg);
+      prefix = CC_CYAN "[DBUG]: ";
       break;
     case LEVEL_INFO:
-      std::println(stdout, CC_GREEN "[INFO]: {}" CC_RESET, msg);
+      prefix = CC_GREEN "[INFO]: ";
       break;
     case LEVEL_WARN:
-      std::println(stdout, CC_YELLOW "[WARN]: {}" CC_RESET, msg);
+      prefix = CC_YELLOW "[WARN]: ";
       break;
     case LEVEL_ERROR:
-      std::println(stdout, CC_RED "[EROR]: {}" CC_RESET, msg);
+      prefix = CC_RED "[EROR]: ";
       break;
     }
+    if (prefix.empty())
+      return;
+
+    // One write per line, so lines from other writers do not land inside it.
+    const StringView text(msg);
+    const StringView suffix(CC_RESET "\n");
+    String line;
+    line.reserve(prefix.size() + text.size() + suffix.size());
+    line.append(prefix);
+    line.append(text);
+    line.append(suffix);
+    detail::write_stdout(std::string_view(line.data(), line.size()));
   }
 } // namespace au

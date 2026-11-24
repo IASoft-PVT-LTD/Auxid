@@ -9,8 +9,6 @@
 
 #include <auxid/macros.hpp>
 
-#include <print>
-
 import auxid;
 import auxid.test;
 
@@ -34,9 +32,9 @@ int main(int argc, char *argv[])
     }
   } _thread_init_guard;
 
-  std::println("{}\n================================", console::GREEN);
-  std::println("   LibAuxid - Unit Test Suite");
-  std::println("================================{}\n", console::RESET);
+  au::detail::write_stdout("\033[32m\n================================\n"
+                           "   LibAuxid - Unit Test Suite\n"
+                           "================================\033[0m\n\n");
 
   return test::TestRegistry::run_all();
 }
