@@ -8,6 +8,19 @@ on:
     branches: [ "main" ]
 
 jobs:
+  authorship-map:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: AI-Human-Map.md is up to date
+        run: python3 tools/authorship_map.py --check
+
   build-linux:
     # apt.llvm.org has no LLVM 20 packages for Ubuntu 26.04 (ubuntu-latest).
     runs-on: ubuntu-24.04

@@ -174,7 +174,7 @@ The library is static unless you pass `-DAuxid_BUILD_SHARED=ON`. CI tests the sh
 
 ## Who wrote what
 
-[AI-Human-Map.md](AI-Human-Map.md) records which parts of Auxid were written by people and which by AI, with the model named for each part. Keep it current when you change the code.
+[AI-Human-Map.md](AI-Human-Map.md) records which parts of Auxid were written by people and which by AI, with the model named for each part. Run `python3 tools/authorship_map.py` when you change the code. CI checks it.
 
 ## Related
 
