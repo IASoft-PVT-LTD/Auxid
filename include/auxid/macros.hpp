@@ -99,10 +99,14 @@
 // arithmetic, pointer casts, C calls, manual memory. A `// SAFETY:` comment right above says why it is sound.
 // Read by auxcc, the Auxid compiler; means nothing to other compilers. clang::suppress, because clang::annotate
 // on a local variable costs optimizations.
+//
+// AU_IMPLICIT marks a constructor or conversion that is implicit on purpose.
 #if defined(__auxcc__)
 #  define AU_UNSAFE [[clang::suppress("au::unsafe")]]
+#  define AU_IMPLICIT [[clang::suppress("au::implicit")]]
 #else
 #  define AU_UNSAFE
+#  define AU_IMPLICIT
 #endif
 
 #if defined(_MSC_VER)
