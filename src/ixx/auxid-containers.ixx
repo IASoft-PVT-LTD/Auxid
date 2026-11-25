@@ -724,7 +724,8 @@ public:
       {
         const usize new_size = current_size - 1;
 
-        if (is_short())
+        // SAFETY: is_short() says which layout is alive, and new_size is below the size.
+        AU_UNSAFE if (is_short())
         {
           m_storage.s.data[new_size] = '\0';
           set_short_size(static_cast<u8>(new_size));
@@ -745,7 +746,8 @@ public:
         reserve(cur_len == 0 ? 8 : get_capacity() * 2);
       }
 
-      if (is_short())
+      // SAFETY: is_short() says which layout is alive; the capacity is above cur_len, plus a terminator.
+      AU_UNSAFE if (is_short())
       {
         m_storage.s.data[cur_len] = c;
         m_storage.s.data[cur_len + 1] = '\0';
@@ -772,7 +774,8 @@ public:
 
     auto end() -> char *
     {
-      return get_data() + get_size();
+      // SAFETY: the buffer holds get_size() chars and a terminator.
+      AU_UNSAFE return get_data() + get_size();
     }
 
     [[nodiscard]] auto begin() const -> const char *
@@ -782,7 +785,8 @@ public:
 
     [[nodiscard]] auto end() const -> const char *
     {
-      return get_data() + get_size();
+      // SAFETY: the buffer holds get_size() chars and a terminator.
+      AU_UNSAFE return get_data() + get_size();
     }
 
     [[nodiscard]] auto cbegin() const noexcept -> const_iterator
@@ -831,7 +835,8 @@ public:
       if (get_size() == 0)
         panic("Called back() on empty String");
 #endif
-      return get_data()[get_size() - 1];
+      // SAFETY: the caller checks that the string is not empty; debug builds panic.
+      AU_UNSAFE return get_data()[get_size() - 1];
     }
 
     [[nodiscard]] auto back() const -> const char &
@@ -840,7 +845,8 @@ public:
       if (get_size() == 0)
         panic("Called back() on empty String");
 #endif
-      return get_data()[get_size() - 1];
+      // SAFETY: the caller checks that the string is not empty; debug builds panic.
+      AU_UNSAFE return get_data()[get_size() - 1];
     }
 
     AU_IMPLICIT operator Span<char>()
@@ -888,12 +894,14 @@ public:
 public:
     auto clear() -> void
     {
-      if (is_short())
+      // SAFETY: is_short() says which layout is alive.
+      AU_UNSAFE if (is_short())
         set_short_size(0);
       else
         m_storage.l.size = 0;
 
-      get_data()[0] = '\0';
+      // SAFETY: the buffer always holds at least a terminator.
+      AU_UNSAFE get_data()[0] = '\0';
     }
 
     [[nodiscard]] auto substr(usize pos, usize count = npos) const -> StringView
