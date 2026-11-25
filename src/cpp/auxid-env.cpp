@@ -38,30 +38,16 @@ namespace au::env
 {
   namespace
   {
-    [[nodiscard]] auto path_from_utf8(StringView sv) -> filesystem::Path
-    {
-#if AU_PLATFORM_WINDOWS
-      // SAFETY: char8_t is one byte, and the view covers exactly sv. The standard does not let char8_t
-      // alias char; this relies on path only passing the bytes on for conversion.
-      // char8_t source: converts UTF-8 to the native wide encoding.
-      AU_UNSAFE return filesystem::Path(
-          std::u8string_view(reinterpret_cast<const char8_t *>(sv.data()), sv.size()));
-#else
-      // POSIX paths ARE bytes; plain chars pass through untranslated. (Also
-      // sidesteps a Homebrew LLVM 22.1.8 codegen crash in the char8_t
-      // conversion machinery observed on macOS CI.)
-      return filesystem::Path(std::string_view(sv.data(), sv.size()));
-#endif
-    }
-
 #if AU_PLATFORM_WINDOWS
 
     [[nodiscard]] auto utf8_to_wide(StringView utf8) -> Vec<wchar_t>
     {
+      if (utf8.size() > win32::MAX_TEXT_)
+        panic("text of more than 2 GB passed to the OS");
       Vec<wchar_t> wide;
       if (!utf8.empty())
       {
-        // SAFETY: reads utf8.size() bytes (int limits that to 2 GB) and only counts.
+        // SAFETY: reads utf8.size() bytes and only counts.
         AU_UNSAFE const int needed = ::MultiByteToWideChar(win32::CP_UTF8_, 0, utf8.data(),
                                                            static_cast<int>(utf8.size()), nullptr, 0);
         if (needed > 0)
@@ -93,6 +79,19 @@ namespace au::env
     }
 
 #endif
+
+    [[nodiscard]] auto path_from_utf8(StringView sv) -> filesystem::Path
+    {
+#if AU_PLATFORM_WINDOWS
+      const Vec<wchar_t> wide = utf8_to_wide(sv);
+      return filesystem::Path(std::wstring_view(wide.data(), wide.size() - 1)); // without the terminator
+#else
+      // POSIX paths ARE bytes; plain chars pass through untranslated. (Also
+      // sidesteps a Homebrew LLVM 22.1.8 codegen crash in the char8_t
+      // conversion machinery observed on macOS CI.)
+      return filesystem::Path(std::string_view(sv.data(), sv.size()));
+#endif
+    }
   } // namespace
 
 #if AU_PLATFORM_WINDOWS

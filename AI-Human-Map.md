@@ -10,27 +10,27 @@ The OS layer is `auxid.time`, `auxid.env`, `auxid.ipc`, `auxid.proc`, `auxid.dl`
 
 | | Human | Claude Fable 5 | Claude Opus 5.5 | All AI |
 | --- | --- | --- | --- | --- |
-| Whole repository, 15,896 lines | **62.3%** | 20.5% | 17.1% | **37.7%** |
-| Library only, 9,017 lines | **54.0%** | 27.9% | 18.2% | **46.0%** |
+| Whole repository, 16,121 lines | **61.4%** | 19.8% | 18.7% | **38.6%** |
+| Library only, 9,126 lines | **53.3%** | 26.7% | 20.0% | **46.7%** |
 | Library without the OS layer, 6,669 lines | **72.8%** | 6.1% | 21.1% | **27.2%** |
-| AI commits | | 19 | 16 | 35 |
+| AI commits | | 19 | 18 | 37 |
 
 The first commit marked as AI is from 2026-08-26. Percentages are rounded and may not add up to exactly 100.
 
-These numbers follow moved and copied lines back to their source. Without that, AI is 39.0% of the repository instead of 37.7%.
+These numbers follow moved and copied lines back to their source. Without that, AI is 39.9% of the repository instead of 38.6%.
 
 ## By area
 
 | Area | Lines | Human | Claude Fable 5 | Claude Opus 5.5 | Files with no AI code commits |
 | --- | --- | --- | --- | --- | --- |
 | Library, without the OS layer | 6,669 | 4,857 (72.8%) | 407 (6.1%) | 1,405 (21.1%) | 1 of 13 |
-| OS layer | 2,348 | 8 (0.3%) | 2,106 (89.7%) | 234 (10.0%) | 0 of 11 |
-| Tests | 2,685 | 1,377 (51.3%) | 602 (22.4%) | 706 (26.3%) | 10 of 23 |
+| OS layer | 2,457 | 8 (0.3%) | 2,027 (82.5%) | 422 (17.2%) | 0 of 11 |
+| Tests | 2,801 | 1,377 (49.2%) | 616 (22.0%) | 808 (28.8%) | 10 of 23 |
 | Benchmarks | 1,677 | 1,677 (100.0%) | 0 (0.0%) | 0 (0.0%) | 10 of 11 |
 | Build files and presets | 1,358 | 1,325 (97.6%) | 27 (2.0%) | 6 (0.4%) | 19 of 23 |
 | CI, tools and config | 900 | 628 (69.8%) | 0 (0.0%) | 272 (30.2%) | 7 of 9 |
-| README and docs | 259 | 34 (13.1%) | 124 (47.9%) | 101 (39.0%) | 0 of 2 |
-| **Total** | 15,896 | 9,906 (62.3%) | 3,266 (20.5%) | 2,724 (17.1%) | 47 of 92 |
+| README and docs | 259 | 34 (13.1%) | 119 (45.9%) | 106 (40.9%) | 0 of 2 |
+| **Total** | 16,121 | 9,906 (61.4%) | 3,196 (19.8%) | 3,019 (18.7%) | 47 of 92 |
 
 ## Files with AI-written lines
 
@@ -58,15 +58,15 @@ Each count is the number of lines that survive today. The few human lines in fil
 | File | Lines | Human | Claude Fable 5 | Claude Opus 5.5 |
 | --- | --- | --- | --- | --- |
 | [src/cpp/auxid-dl.cpp](src/cpp/auxid-dl.cpp) | 110 | 2 (2%) | 94 | 14 |
-| [src/cpp/auxid-env.cpp](src/cpp/auxid-env.cpp) | 357 | 0 (0%) | 313 | 44 |
-| [src/cpp/auxid-ipc.cpp](src/cpp/auxid-ipc.cpp) | 583 | 2 (0%) | 506 | 75 |
-| [src/cpp/auxid-proc.cpp](src/cpp/auxid-proc.cpp) | 585 | 2 (0%) | 489 | 94 |
+| [src/cpp/auxid-env.cpp](src/cpp/auxid-env.cpp) | 356 | 0 (0%) | 311 | 45 |
+| [src/cpp/auxid-ipc.cpp](src/cpp/auxid-ipc.cpp) | 594 | 2 (0%) | 508 | 84 |
+| [src/cpp/auxid-proc.cpp](src/cpp/auxid-proc.cpp) | 667 | 2 (0%) | 415 | 250 |
 | [src/cpp/auxid-time.cpp](src/cpp/auxid-time.cpp) | 24 | 0 (0%) | 24 | 0 |
-| [src/hpp/auxid_win32.hpp](src/hpp/auxid_win32.hpp) | 166 | 0 (0%) | 161 | 5 |
+| [src/hpp/auxid_win32.hpp](src/hpp/auxid_win32.hpp) | 168 | 0 (0%) | 161 | 7 |
 | [src/ixx/auxid-dl.ixx](src/ixx/auxid-dl.ixx) | 57 | 0 (0%) | 55 | 2 |
 | [src/ixx/auxid-env.ixx](src/ixx/auxid-env.ixx) | 41 | 0 (0%) | 41 | 0 |
 | [src/ixx/auxid-ipc.ixx](src/ixx/auxid-ipc.ixx) | 248 | 2 (1%) | 246 | 0 |
-| [src/ixx/auxid-proc.ixx](src/ixx/auxid-proc.ixx) | 153 | 0 (0%) | 153 | 0 |
+| [src/ixx/auxid-proc.ixx](src/ixx/auxid-proc.ixx) | 168 | 0 (0%) | 148 | 20 |
 | [src/ixx/auxid-time.ixx](src/ixx/auxid-time.ixx) | 24 | 0 (0%) | 24 | 0 |
 
 ### Tests
@@ -82,9 +82,9 @@ Each count is the number of lines that survive today. The few human lines in fil
 | [tests/cpp/memory/arena.cpp](tests/cpp/memory/arena.cpp) | 563 | 83 (15%) | 0 | 480 |
 | [tests/cpp/memory/foreign_thread.cpp](tests/cpp/memory/foreign_thread.cpp) | 49 | 8 (16%) | 41 | 0 |
 | [tests/cpp/os/dl.cpp](tests/cpp/os/dl.cpp) | 74 | 8 (11%) | 66 | 0 |
-| [tests/cpp/os/env.cpp](tests/cpp/os/env.cpp) | 91 | 8 (9%) | 83 | 0 |
-| [tests/cpp/os/ipc.cpp](tests/cpp/os/ipc.cpp) | 117 | 8 (7%) | 109 | 0 |
-| [tests/cpp/os/proc.cpp](tests/cpp/os/proc.cpp) | 156 | 8 (5%) | 148 | 0 |
+| [tests/cpp/os/env.cpp](tests/cpp/os/env.cpp) | 116 | 8 (7%) | 83 | 25 |
+| [tests/cpp/os/ipc.cpp](tests/cpp/os/ipc.cpp) | 143 | 8 (6%) | 109 | 26 |
+| [tests/cpp/os/proc.cpp](tests/cpp/os/proc.cpp) | 221 | 8 (4%) | 162 | 51 |
 | [tests/cpp/os/time.cpp](tests/cpp/os/time.cpp) | 41 | 8 (20%) | 33 | 0 |
 
 ### Build files and presets
@@ -108,7 +108,7 @@ Each count is the number of lines that survive today. The few human lines in fil
 | File | Lines | Human | Claude Fable 5 | Claude Opus 5.5 |
 | --- | --- | --- | --- | --- |
 | [README.md](README.md) | 136 | 34 (25%) | 1 | 101 |
-| [docs/OS-CONTRACT.md](docs/OS-CONTRACT.md) | 123 | 0 (0%) | 123 | 0 |
+| [docs/OS-CONTRACT.md](docs/OS-CONTRACT.md) | 123 | 0 (0%) | 118 | 5 |
 
 AI commits changed these files too, but none of their lines survive:
 
@@ -130,6 +130,8 @@ Commits that only change this file are left out.
 
 | Commit | Date | Model | Author | Subject |
 | --- | --- | --- | --- | --- |
+| `b37023c` | 2026-11-25 | Claude Opus 5.5 | Claude | [FIX]: Windows: Text and Buffers Longer Than an Int Can Say |
+| `c2cd6c4` | 2026-11-25 | Claude Opus 5.5 | Claude | [FIX]: proc and ipc: Kills of Recycled Pids, Leaks on Failed Spawns, Lost Sockets |
 | `a84b17b` | 2026-11-25 | Claude Opus 5.5 | Claude | [FIX]: Containers: Arguments That Refer Into the Container |
 | `0bf1a95` | 2026-11-25 | Claude Opus 5.5 | Claude | [MAINTAIN]: Mark Unsafe Code in String Members Nothing Instantiates |
 | `a45020b` | 2026-11-25 | Claude Opus 5.5 | Claude | [MAINTAIN]: Mark Unsafe Code in containers |

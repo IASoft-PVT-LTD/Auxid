@@ -13,6 +13,9 @@
 #include <auxid/macros.hpp>
 
 #include <csignal>
+#if !AU_PLATFORM_WINDOWS
+#  include <unistd.h>
+#endif
 
 import auxid;
 import auxid.test;
@@ -37,6 +40,8 @@ namespace
       add_test("stdout_capture", [this] { return stdout_capture(); });
       add_test("terminate_sleeper", [this] { return terminate_sleeper(); });
       add_test("lifetime_group_kills", [this] { return lifetime_group_kills(); });
+      add_test("lifetime_group_outlives_child", [this] { return lifetime_group_outlives_child(); });
+      add_test("failed_spawn_closes_stdio", [this] { return failed_spawn_closes_stdio(); });
 #endif
     }
 
@@ -120,6 +125,70 @@ namespace
       (void) process.wait();
 
       return check(captured.find("hello-proc") != String::npos, "captured child stdout");
+    }
+
+    auto lifetime_group_outlives_child() -> bool
+    {
+      auto group_res = proc::LifetimeGroup::create();
+      if (!check(group_res.is_ok(), "group created"))
+        return false;
+      auto group = static_cast<proc::LifetimeGroup &&>(group_res.unwrap());
+
+      for (i32 i = 0; i < 2; i++)
+      {
+        auto opts = shell_opts("exit 7");
+        opts.stdin_mode = proc::StdioMode::Null;
+        opts.stdout_mode = proc::StdioMode::Null;
+        opts.stderr_mode = proc::StdioMode::Null;
+        opts.lifetime = &group;
+        auto spawned = proc::spawn(shell_exe(), static_cast<proc::SpawnOptions &&>(opts));
+        if (!check(spawned.is_ok(), "spawn enrolled ok"))
+          return false;
+        auto process = static_cast<proc::Process &&>(spawned.unwrap());
+
+        // Once by polling, once by blocking.
+        if (i == 0)
+        {
+          for (;;)
+          {
+            auto polled = process.try_status();
+            if (!check(polled.is_ok(), "try_status ok"))
+              return false;
+            if (polled.unwrap().has_value())
+              break;
+            time::sleep_ms(1);
+          }
+        }
+        auto status = process.wait();
+        if (!check(status.is_ok(), "wait ok") || !check_eq(status.unwrap().code, 7, "exit code observed"))
+          return false;
+        if (!check(process.terminate().is_err(), "terminate after the exit was seen is an Err"))
+          return false;
+      }
+      group.close();
+      return true;
+    }
+
+    auto failed_spawn_closes_stdio() -> bool
+    {
+#  if !AU_PLATFORM_WINDOWS
+      const int before = ::dup(0);
+      ::close(before);
+#  endif
+      auto opts = shell_opts("exit 0");
+      opts.stdin_mode = proc::StdioMode::Piped;
+      opts.stdout_mode = proc::StdioMode::Null;
+      opts.stderr_mode = static_cast<proc::StdioMode>(99);
+      auto spawned = proc::spawn(shell_exe(), static_cast<proc::SpawnOptions &&>(opts));
+      if (!check(spawned.is_err(), "unknown mode is an Err"))
+        return false;
+#  if !AU_PLATFORM_WINDOWS
+      const int after = ::dup(0);
+      ::close(after);
+      return check_eq(after, before, "no descriptor is left open");
+#  else
+      return true;
+#  endif
     }
 
     auto terminate_sleeper() -> bool

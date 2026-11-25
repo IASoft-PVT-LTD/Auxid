@@ -62,10 +62,12 @@ namespace au::ipc
 
     [[nodiscard]] auto widen(StringView utf8) -> Vec<wchar_t>
     {
+      if (utf8.size() > win32::MAX_TEXT_)
+        panic("text of more than 2 GB passed to the OS");
       Vec<wchar_t> wide;
       if (!utf8.empty())
       {
-        // SAFETY: reads utf8.size() bytes (int limits that to 2 GB) and only counts.
+        // SAFETY: reads utf8.size() bytes and only counts.
         AU_UNSAFE const int needed = ::MultiByteToWideChar(win32::CP_UTF8_, 0, utf8.data(),
                                                  static_cast<int>(utf8.size()), nullptr, 0);
         if (needed > 0)
@@ -104,10 +106,12 @@ namespace au::ipc
 
     [[nodiscard]] auto read_handle(i64 native, Span<u8> buffer, const char *op) -> Result<usize>
     {
+      // A short read is allowed; a size cut to 32 bits could become 0, which reads as end of stream.
+      const unsigned long want =
+          buffer.size() < win32::MAX_TEXT_ ? static_cast<unsigned long>(buffer.size()) : win32::MAX_TEXT_;
       unsigned long got = 0;
       // SAFETY: writes at most buffer.size() bytes into buffer, and the count into got.
-      AU_UNSAFE const int ok = ::ReadFile(to_handle(native), buffer.data(), static_cast<unsigned long>(buffer.size()),
-                                          &got, nullptr);
+      AU_UNSAFE const int ok = ::ReadFile(to_handle(native), buffer.data(), want, &got, nullptr);
       if (ok == 0)
       {
         Error err = Error::os_last();
@@ -120,10 +124,11 @@ namespace au::ipc
 
     [[nodiscard]] auto write_handle(i64 native, Span<const u8> data, const char *op) -> Result<usize>
     {
+      const unsigned long want =
+          data.size() < win32::MAX_TEXT_ ? static_cast<unsigned long>(data.size()) : win32::MAX_TEXT_;
       unsigned long put = 0;
       // SAFETY: reads at most data.size() bytes of data, and writes the count into put.
-      AU_UNSAFE const int ok = ::WriteFile(to_handle(native), data.data(), static_cast<unsigned long>(data.size()),
-                                           &put, nullptr);
+      AU_UNSAFE const int ok = ::WriteFile(to_handle(native), data.data(), want, &put, nullptr);
       if (ok == 0)
         return fail(Error::os_last().ctx(op));
       return static_cast<usize>(put);
@@ -560,9 +565,15 @@ namespace au::ipc
           return fail(Error(ErrorDomain::Os, EADDRINUSE,
                             String("ipc::ChannelListener::bind: name already in use")));
         }
+        const int saved = errno;
         ::close(probe);
-        // SAFETY: path is null-terminated.
-        AU_UNSAFE ::unlink(path.c_str());
+        if (saved == ECONNREFUSED)
+        {
+          // SAFETY: path is null-terminated.
+          AU_UNSAFE ::unlink(path.c_str());
+        }
+        else if (saved != ENOENT)
+          return fail(Error::os(saved).ctx("ipc::ChannelListener::bind"));
       }
     }
 
