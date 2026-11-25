@@ -30,8 +30,51 @@ namespace
       add_test("arena_basic_string", [this] { return arena_basic_string(); });
       add_test("arena_string_grows", [this] { return arena_string_grows(); });
       add_test("arena_string_copy_assign", [this] { return arena_string_copy_assign(); });
+      add_test("append_itself", [this] { return append_itself(); });
+      add_test("assign_part_of_itself", [this] { return assign_part_of_itself(); });
       add_test("find_needle_longer_than_haystack",
                [this] { return find_needle_longer_than_haystack(); });
+    }
+
+    auto append_itself() -> bool
+    {
+      // Both layouts; the long one, and the step from short to long, replace
+      // the buffer that the argument points into.
+      String small("0123456789abcdef");
+      small.append(small);
+      if (!check_eq(small, "0123456789abcdef0123456789abcdef", "short string appended to itself"))
+        return false;
+
+      String large("0123456789012345678901234567890123456789");
+      large += large;
+      if (!check_eq(large, "01234567890123456789012345678901234567890123456789012345678901234567890123456789",
+                    "long string appended to itself"))
+        return false;
+
+      String part("012");
+      for (i32 i = 0; i < 100; i++)
+        part.append(part.substr(0, 3));
+      if (!check_eq(part.size(), 303u, "100 parts were appended"))
+        return false;
+      for (usize i = 0; i < part.size(); i++)
+        if (!check_eq(part.substr(i)[0], static_cast<char>('0' + i % 3), "with their contents"))
+          return false;
+      return true;
+    }
+
+    auto assign_part_of_itself() -> bool
+    {
+      String small("0123456789");
+      small.assign(small.substr(2, 5));
+      if (!check_eq(small, "23456", "short string"))
+        return false;
+
+      String large("abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyz");
+      large.assign(large.substr(1, 40));
+      if (!check_eq(large, "bcdefghijklmnopqrstuvwxyzabcdefghijklmno", "overlapping move"))
+        return false;
+      large.assign(large);
+      return check_eq(large, "bcdefghijklmnopqrstuvwxyzabcdefghijklmno", "all of itself");
     }
 
     auto find_needle_longer_than_haystack() -> bool

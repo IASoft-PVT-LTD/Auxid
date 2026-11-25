@@ -412,6 +412,25 @@ private:
       AU_UNSAFE m_storage.l.cap_flagged = (cap << 1) | 1;
     }
 
+    // Reserves, and returns `from` moved along with the buffer if it points into this string.
+    [[nodiscard]] auto reserve_keeping(usize new_cap, const char *from) -> const char *
+    {
+      const char *first = get_data();
+      // SAFETY: the buffer holds get_size() chars and a terminator. std::less orders unrelated pointers too.
+      AU_UNSAFE const bool inside =
+          !std::less<const char *>{}(from, first) && !std::less<const char *>{}(first + get_size(), from);
+      if (!inside)
+      {
+        reserve(new_cap);
+        return from;
+      }
+      // SAFETY: both point into the buffer.
+      AU_UNSAFE const auto offset = static_cast<usize>(from - first);
+      reserve(new_cap);
+      // SAFETY: reserve kept the contents and their terminator, so the same char is at the same offset.
+      AU_UNSAFE return get_data() + offset;
+    }
+
 public:
     BasicString()
       requires std::default_initializable<A>
@@ -621,23 +640,25 @@ public:
     auto assign(StringView sv) -> void
     {
       usize len = sv.size();
+      const char *from = sv.data();
       if (len > get_capacity())
       {
-        reserve(len);
+        from = reserve_keeping(len, from);
       }
 
-      // SAFETY: the capacity is at least len, plus a terminator. sv must not point into this string.
+      // SAFETY: the capacity is at least len, plus a terminator. sv may be a part of this string, so the
+      // bytes may overlap.
       AU_UNSAFE if (is_short())
       {
         set_short_size(static_cast<u8>(len));
         if (len > 0)
-          std::memcpy(m_storage.s.data, sv.data(), len);
+          std::memmove(m_storage.s.data, from, len);
         m_storage.s.data[len] = '\0';
       }
       else
       {
         if (len > 0)
-          std::memcpy(m_storage.l.ptr, sv.data(), len);
+          std::memmove(m_storage.l.ptr, from, len);
         m_storage.l.ptr[len] = '\0';
         m_storage.l.size = len;
       }
@@ -650,20 +671,20 @@ public:
 
       usize cur_len = size();
       usize req_len = cur_len + sv.size();
+      const char *from = sv.data();
 
       if (req_len > get_capacity())
       {
         usize next_cap = get_capacity() * 2;
         if (next_cap < req_len)
           next_cap = req_len;
-        reserve(next_cap);
+        from = reserve_keeping(next_cap, from);
       }
 
-      // SAFETY: the capacity is at least req_len, plus a terminator. sv must not point into this string, because
-      // reserve may have released that buffer.
+      // SAFETY: the capacity is at least req_len, plus a terminator.
       AU_UNSAFE char *dest = get_data() + cur_len;
-      // SAFETY: as above.
-      AU_UNSAFE std::memcpy(dest, sv.data(), sv.size());
+      // SAFETY: as above. sv may be a part of this string that ends with the terminator, so the bytes may overlap.
+      AU_UNSAFE std::memmove(dest, from, sv.size());
 
       // SAFETY: as above.
       AU_UNSAFE if (is_short())
@@ -1530,11 +1551,12 @@ public:
     CompactVecBase(std::initializer_list<T> init)
       requires std::default_initializable<AllocatorT>
     {
+      if (init.size() > MAX_SIZE)
+        panic("CompactVecBase: more elements than the index type can count");
       reserve_exact(static_cast<size_type>(init.size()));
       if constexpr (std::is_trivially_copyable_v<T>)
       {
-        // SAFETY: T is trivially copyable, and the buffer was reserved for init.size() elements. The caller
-        // keeps that count within size_type.
+        // SAFETY: T is trivially copyable, and the buffer was reserved for init.size() elements.
         AU_UNSAFE if (init.size() > 0)
           std::memcpy(m_data, init.begin(), init.size() * sizeof(T));
         m_size = static_cast<size_type>(init.size());
@@ -1643,10 +1665,18 @@ public:
     template<typename... Args> auto emplace_back(Args &&...args) -> T &
     {
       if (m_size >= m_capacity)
+      {
+        // The arguments may refer to an element of this vector, so use them before the buffer moves.
+        T value(std::forward<Args>(args)...);
         grow();
-      // SAFETY: m_size < m_capacity after grow(). No argument may refer into this vector, because grow() may
-      // have released that buffer; the caller also keeps the count within size_type.
-      AU_UNSAFE au::construct_at(&m_data[m_size], std::forward<Args>(args)...);
+        // SAFETY: m_size < m_capacity after grow().
+        AU_UNSAFE au::construct_at(&m_data[m_size], std::move(value));
+      }
+      else
+      {
+        // SAFETY: m_size < m_capacity.
+        AU_UNSAFE au::construct_at(&m_data[m_size], std::forward<Args>(args)...);
+      }
       // SAFETY: the element just built.
       AU_UNSAFE return m_data[m_size++];
     }
@@ -1741,12 +1771,17 @@ public:
 
     auto resize(size_type new_size, const T &fill_val) -> void
     {
+      if (new_size > m_capacity)
+      {
+        // fill_val may be an element of this vector, so copy it before the buffer moves.
+        const T value(fill_val);
+        reserve_at_least(new_size);
+        resize(new_size, value);
+        return;
+      }
       if (new_size > m_size)
       {
-        if (new_size > m_capacity)
-          reserve_at_least(new_size);
-        // SAFETY: the capacity is at least new_size, and these elements are not alive yet. fill_val must not refer into
-        // this vector, because reserving may have released that buffer.
+        // SAFETY: the capacity is at least new_size, and these elements are not alive yet.
         AU_UNSAFE for (size_type i = m_size; i < new_size; ++i)
           au::construct_at(&m_data[i], fill_val);
       }
@@ -1907,8 +1942,12 @@ private:
       m_capacity = new_cap;
     }
 
+    static constexpr usize MAX_SIZE = static_cast<size_type>(-1);
+
     auto grow() -> void
     {
+      if (m_size == MAX_SIZE)
+        panic("CompactVecBase: more elements than the index type can count");
       reserve_at_least(static_cast<size_type>(m_size + 1));
     }
 
