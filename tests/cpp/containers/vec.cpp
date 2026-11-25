@@ -27,6 +27,51 @@ namespace
       add_test("reserve_and_capacity", [this] { return reserve_and_capacity(); });
       add_test("initializer_list", [this] { return initializer_list_(); });
       add_test("clear", [this] { return clear_(); });
+      add_test("compact_push_own_element", [this] { return compact_push_own_element(); });
+      add_test("compact_resize_own_element", [this] { return compact_resize_own_element(); });
+      add_test("tiny_up_to_the_limit", [this] { return tiny_up_to_the_limit(); });
+    }
+
+    auto compact_push_own_element() -> bool
+    {
+      const StringView text("long enough to be on the heap, 0123456789");
+      CompactVec<String> strings;
+      CompactVec<i32> numbers;
+      strings.push_back(String(text));
+      numbers.push_back(77);
+      for (i32 i = 0; i < 100; i++)
+      {
+        strings.push_back(strings[0]);
+        numbers.emplace_back(numbers[0]);
+      }
+      for (u32 i = 0; i < strings.size(); i++)
+        if (!check_eq(strings[i], text, "copy of the first string") ||
+            !check_eq(numbers[i], 77, "copy of the first number"))
+          return false;
+
+      while (strings.size() < strings.capacity())
+        strings.push_back(strings[0]);
+      strings.push_back(std::move(strings[1]));
+      return check_eq(strings.back(), text, "own element moved to the end") &&
+             check(strings[1].empty(), "and left empty");
+    }
+
+    auto compact_resize_own_element() -> bool
+    {
+      const StringView text("long enough to be on the heap, 0123456789");
+      CompactVec<String> v;
+      v.push_back(String(text));
+      v.resize(50, v[0]);
+      return check_eq(v.size(), 50u, "resized") && check_eq(v[49], text, "filled with its own element");
+    }
+
+    auto tiny_up_to_the_limit() -> bool
+    {
+      TinyVec<u8> v;
+      for (u32 i = 0; i < 65535; i++)
+        v.push_back(static_cast<u8>(i));
+      return check_eq(static_cast<u32>(v.size()), 65535u, "65,535 elements fit") &&
+             check_eq(v.back(), static_cast<u8>(254), "last one");
     }
 
     auto push_and_pop() -> bool
