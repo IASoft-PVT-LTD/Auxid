@@ -108,6 +108,8 @@ extern "C"
 namespace au::win32
 {
   inline constexpr unsigned int CP_UTF8_ = 65001;
+  // The longest text a length of type int can describe.
+  inline constexpr unsigned long MAX_TEXT_ = 0x7FFFFFFFul;
   inline constexpr unsigned long ERROR_ENVVAR_NOT_FOUND_ = 203;
   inline constexpr unsigned long ERROR_INSUFFICIENT_BUFFER_ = 122;
   inline constexpr unsigned long ERROR_ALREADY_EXISTS_ = 183;

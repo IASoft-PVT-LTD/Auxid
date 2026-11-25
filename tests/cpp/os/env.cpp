@@ -31,6 +31,7 @@ namespace
     {
       add_test("set_find_unset_roundtrip", [this] { return set_find_unset_roundtrip(); });
       add_test("unicode_value_roundtrip", [this] { return unicode_value_roundtrip(); });
+      add_test("unicode_path_roundtrip", [this] { return unicode_path_roundtrip(); });
       add_test("get_or_fallback", [this] { return get_or_fallback(); });
       add_test("unset_missing_is_ok", [this] { return unset_missing_is_ok(); });
       add_test("executable_path_absolute", [this] { return executable_path_absolute(); });
@@ -49,6 +50,32 @@ namespace
       if (!check(env::unset("AUXID_TEST_VAR").is_ok(), "unset ok"))
         return false;
       return check_not(env::find("AUXID_TEST_VAR").has_value(), "gone after unset");
+    }
+
+    auto unicode_path_roundtrip() -> bool
+    {
+#if AU_PLATFORM_WINDOWS
+      const char *var = "TEMP";
+      const char *value = "C:/\xE6\xB8\xAC\xE8\xA9\xA6-\xF0\x9F\x9C\x9A";
+#else
+      const char *var = "TMPDIR";
+      const char *value = "/\xE6\xB8\xAC\xE8\xA9\xA6-\xF0\x9F\x9C\x9A";
+#endif
+      const auto saved = env::find(var);
+      if (!check(env::set(var, value).is_ok(), "set ok"))
+        return false;
+      const auto dir = env::standard_dir(env::StandardDir::Temp, "auxid");
+      if (saved.has_value())
+        (void) env::set(var, *saved);
+      else
+        (void) env::unset(var);
+      if (!check(dir.is_ok(), "standard_dir ok"))
+        return false;
+
+      String utf8;
+      for (const auto unit : dir.unwrap().generic_u8string())
+        utf8.push(static_cast<char>(unit));
+      return check_eq(utf8, value, "the path keeps its UTF-8 contents");
     }
 
     auto unicode_value_roundtrip() -> bool

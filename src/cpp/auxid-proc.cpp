@@ -179,10 +179,12 @@ private:
 
     [[nodiscard]] auto widen_z(StringView utf8) -> Vec<wchar_t>
     {
+      if (utf8.size() > win32::MAX_TEXT_)
+        panic("text of more than 2 GB passed to the OS");
       Vec<wchar_t> wide;
       if (!utf8.empty())
       {
-        // SAFETY: reads utf8.size() bytes (int limits that to 2 GB) and only counts.
+        // SAFETY: reads utf8.size() bytes and only counts.
         AU_UNSAFE const int needed = ::MultiByteToWideChar(win32::CP_UTF8_, 0, utf8.data(),
                                                  static_cast<int>(utf8.size()), nullptr, 0);
         if (needed > 0)
