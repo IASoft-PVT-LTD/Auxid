@@ -1,3 +1,4 @@
+// auxid: trust-level 1
 // Auxid: The Rigid C++ Platform.
 //
 // Copyright (C) 2026 I-A-S (ias@iasoft.dev)
@@ -52,7 +53,8 @@ namespace au::proc
 
     [[nodiscard]] auto to_handle(i64 native) noexcept -> void *
     {
-      return reinterpret_cast<void *>(static_cast<std::intptr_t>(native));
+      // SAFETY: a HANDLE stored as an integer; it is only passed back to the OS.
+      AU_UNSAFE return reinterpret_cast<void *>(static_cast<std::intptr_t>(native));
     }
 
     // MSVC command-line quoting rules: backslashes double only before a
@@ -101,12 +103,14 @@ namespace au::proc
       Vec<wchar_t> wide;
       if (!utf8.empty())
       {
-        const int needed = ::MultiByteToWideChar(win32::CP_UTF8_, 0, utf8.data(),
+        // SAFETY: reads utf8.size() bytes (int limits that to 2 GB) and only counts.
+        AU_UNSAFE const int needed = ::MultiByteToWideChar(win32::CP_UTF8_, 0, utf8.data(),
                                                  static_cast<int>(utf8.size()), nullptr, 0);
         if (needed > 0)
         {
           wide.resize(static_cast<usize>(needed));
-          ::MultiByteToWideChar(win32::CP_UTF8_, 0, utf8.data(), static_cast<int>(utf8.size()),
+          // SAFETY: the same input, written to the `needed` units just allocated.
+          AU_UNSAFE ::MultiByteToWideChar(win32::CP_UTF8_, 0, utf8.data(), static_cast<int>(utf8.size()),
                                 wide.data(), needed);
         }
       }
@@ -131,12 +135,14 @@ namespace au::proc
         out.child_handle = ::GetStdHandle(std_handle_id);
         return out;
       case StdioMode::Null: {
-        void *null_handle =
+        // SAFETY: the name is a literal; no other pointer is passed.
+        AU_UNSAFE void *null_handle =
             ::CreateFileW(L"NUL", win32::GENERIC_READ_ | win32::GENERIC_WRITE_,
                           win32::FILE_SHARE_READ_WRITE_, nullptr, win32::OPEN_EXISTING_, 0, nullptr);
         if (null_handle == win32::invalid_handle())
           return fail(Error::os_last().ctx("proc::spawn: opening NUL"));
-        ::SetHandleInformation(null_handle, win32::HANDLE_FLAG_INHERIT_, win32::HANDLE_FLAG_INHERIT_);
+        // SAFETY: null_handle was just opened.
+        AU_UNSAFE ::SetHandleInformation(null_handle, win32::HANDLE_FLAG_INHERIT_, win32::HANDLE_FLAG_INHERIT_);
         out.child_handle = null_handle;
         out.close_child_after_spawn = true;
         return out;
@@ -145,7 +151,8 @@ namespace au::proc
         AU_TRY_VAR(pair, ipc::pipe());
         const i64 child_end = child_reads ? pair.reader.release_native() : pair.writer.release_native();
         out.parent_end = child_reads ? pair.writer.release_native() : pair.reader.release_native();
-        ::SetHandleInformation(to_handle(child_end), win32::HANDLE_FLAG_INHERIT_,
+        // SAFETY: child_end is an open pipe handle.
+        AU_UNSAFE ::SetHandleInformation(to_handle(child_end), win32::HANDLE_FLAG_INHERIT_,
                                win32::HANDLE_FLAG_INHERIT_);
         out.child_handle = to_handle(child_end);
         out.close_child_after_spawn = true;
@@ -172,7 +179,8 @@ namespace au::proc
       case StdioMode::Inherit:
         return out; // fork inherits; no dup2 needed
       case StdioMode::Null: {
-        const int null_fd = ::open("/dev/null", O_RDWR | O_CLOEXEC);
+        // SAFETY: the path is a literal, and without O_CREAT no mode is read.
+        AU_UNSAFE const int null_fd = ::open("/dev/null", O_RDWR | O_CLOEXEC);
         if (null_fd < 0)
           return fail(Error::os(errno).ctx("proc::spawn: opening /dev/null"));
         out.child_fd = null_fd;
@@ -235,22 +243,27 @@ namespace au::proc
 
   AUXID_API auto LifetimeGroup::create() -> Result<LifetimeGroup>
   {
-    void *job = ::CreateJobObjectW(nullptr, nullptr);
+    // SAFETY: null means default security and no name.
+    AU_UNSAFE void *job = ::CreateJobObjectW(nullptr, nullptr);
     if (job == nullptr)
       return fail(Error::os_last().ctx("proc::LifetimeGroup::create"));
 
     win32::JobExtendedLimits limits{};
     limits.basic.limit_flags = win32::JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE_;
-    if (::SetInformationJobObject(job, win32::JOB_OBJECT_EXTENDED_LIMIT_INFORMATION_, &limits,
-                                  sizeof(limits)) == 0)
+    // SAFETY: limits has the layout this information class requires (checked in auxid_win32.hpp).
+    AU_UNSAFE const int limited = ::SetInformationJobObject(job, win32::JOB_OBJECT_EXTENDED_LIMIT_INFORMATION_, &limits,
+                                                            sizeof(limits));
+    if (limited == 0)
     {
       Error err = Error::os_last();
-      ::CloseHandle(job);
+      // SAFETY: the job was just created and has no other owner.
+      AU_UNSAFE ::CloseHandle(job);
       return fail(std::move(err).ctx("proc::LifetimeGroup::create"));
     }
 
     LifetimeGroup group;
-    group.m_native = static_cast<i64>(reinterpret_cast<std::intptr_t>(job));
+    // SAFETY: a HANDLE fits in 64 bits; to_handle reverses this.
+    AU_UNSAFE group.m_native = static_cast<i64>(reinterpret_cast<std::intptr_t>(job));
     return group;
   }
 
@@ -259,7 +272,8 @@ namespace au::proc
     if (m_native != -1)
     {
       // KILL_ON_JOB_CLOSE: the kernel terminates every enrolled process.
-      ::CloseHandle(to_handle(m_native));
+      // SAFETY: m_native is an open job this object owns; it is cleared below, so it is closed once.
+      AU_UNSAFE ::CloseHandle(to_handle(m_native));
       m_native = -1;
     }
   }
@@ -272,7 +286,8 @@ namespace au::proc
     {
       // Path -> utf8 for quoting (exe paths are expected to be encodable).
       const auto exe_utf8 = exe.u8string();
-      append_quoted_arg(cmdline,
+      // SAFETY: char may read any object's bytes, and the view covers exactly exe_utf8.
+      AU_UNSAFE append_quoted_arg(cmdline,
                         StringView(reinterpret_cast<const char *>(exe_utf8.data()), exe_utf8.size()));
       for (usize i = 0; i < opts.args.size(); i++)
       {
@@ -287,7 +302,8 @@ namespace au::proc
     AU_TRY_VAR(io_err, prepare_stdio(opts.stderr_mode, win32::STD_ERROR_HANDLE_, false));
 
     auto cleanup_stdio = [&]() {
-      for (ChildStdio *io : {&io_in, &io_out, &io_err})
+      // SAFETY: the three locals above outlive the loop, and each closed handle is an open one this function owns.
+      AU_UNSAFE for (ChildStdio *io : {&io_in, &io_out, &io_err})
       {
         if (io->close_child_after_spawn && io->child_handle != nullptr)
           ::CloseHandle(io->child_handle);
@@ -325,7 +341,9 @@ namespace au::proc
 
     win32::ProcessInformation pi{};
 
-    const int created = ::CreateProcessW(
+    // SAFETY: the strings and the environment block are null-terminated and outlive the call, wcmdline is writable as
+    // required, and si and pi have the layout of the SDK structs (checked in auxid_win32.hpp).
+    AU_UNSAFE const int created = ::CreateProcessW(
         native_exe.c_str(), wcmdline.data(), nullptr, nullptr, 1, creation_flags,
         opts.env.has_value() ? env_block.data() : nullptr,
         opts.working_dir.has_value() ? opts.working_dir->c_str() : nullptr, &si, &pi);
@@ -338,28 +356,38 @@ namespace au::proc
 
     if (opts.lifetime != nullptr)
     {
-      if (::AssignProcessToJobObject(to_handle(opts.lifetime->m_native), pi.process) == 0)
+      // SAFETY: the caller keeps the group alive for this call; both handles are open.
+      AU_UNSAFE const int enrolled = ::AssignProcessToJobObject(to_handle(opts.lifetime->m_native), pi.process);
+      if (enrolled == 0)
       {
         Error err = Error::os_last();
-        ::TerminateProcess(pi.process, 1);
-        ::CloseHandle(pi.thread);
-        ::CloseHandle(pi.process);
+        // SAFETY: both handles are open, as CreateProcessW returned them, and not used after this.
+        AU_UNSAFE
+        {
+          ::TerminateProcess(pi.process, 1);
+          ::CloseHandle(pi.thread);
+          ::CloseHandle(pi.process);
+        }
         cleanup_stdio();
         return fail(std::move(err).ctx("proc::spawn: LifetimeGroup enrollment"));
       }
-      ::ResumeThread(pi.thread);
+      // SAFETY: pi.thread is the open handle CreateProcessW returned.
+      AU_UNSAFE ::ResumeThread(pi.thread);
     }
-    ::CloseHandle(pi.thread);
+    // SAFETY: pi.thread is open, and this is its only close on this path.
+    AU_UNSAFE ::CloseHandle(pi.thread);
 
     // Child-side handles are the child's now; drop our copies.
-    for (ChildStdio *io : {&io_in, &io_out, &io_err})
+    // SAFETY: the three locals above outlive the loop, and each closed handle is an open one this function owns.
+    AU_UNSAFE for (ChildStdio *io : {&io_in, &io_out, &io_err})
     {
       if (io->close_child_after_spawn && io->child_handle != nullptr)
         ::CloseHandle(io->child_handle);
     }
 
     Process process;
-    process.m_process = static_cast<i64>(reinterpret_cast<std::intptr_t>(pi.process));
+    // SAFETY: a HANDLE fits in 64 bits; to_handle reverses this.
+    AU_UNSAFE process.m_process = static_cast<i64>(reinterpret_cast<std::intptr_t>(pi.process));
     process.m_id = static_cast<u64>(pi.process_id);
     if (io_in.parent_end != -1)
       process.m_stdin = ipc::PipeWriter::adopt_native(io_in.parent_end);
@@ -374,7 +402,8 @@ namespace au::proc
   {
     if (m_process != -1)
     {
-      ::CloseHandle(to_handle(m_process));
+      // SAFETY: m_process is an open handle this object owns; it is cleared below, so it is closed once.
+      AU_UNSAFE ::CloseHandle(to_handle(m_process));
       m_process = -1;
     }
   }
@@ -386,9 +415,12 @@ namespace au::proc
     if (m_process == -1)
       return fail("proc::Process::wait: no process");
 
-    ::WaitForSingleObject(to_handle(m_process), 0xFFFFFFFFul);
+    // SAFETY: m_process is an open process handle.
+    AU_UNSAFE ::WaitForSingleObject(to_handle(m_process), 0xFFFFFFFFul);
     unsigned long code = 0;
-    if (::GetExitCodeProcess(to_handle(m_process), &code) == 0)
+    // SAFETY: m_process is an open process handle; the call writes the code.
+    AU_UNSAFE const int known = ::GetExitCodeProcess(to_handle(m_process), &code);
+    if (known == 0)
       return fail(Error::os_last().ctx("proc::Process::wait"));
 
     m_last_status = ExitStatus{static_cast<i32>(code), (code & 0xC0000000ul) == 0xC0000000ul};
@@ -403,7 +435,8 @@ namespace au::proc
     if (m_process == -1)
       return fail("proc::Process::try_status: no process");
 
-    const unsigned long waited = ::WaitForSingleObject(to_handle(m_process), 0);
+    // SAFETY: m_process is an open process handle.
+    AU_UNSAFE const unsigned long waited = ::WaitForSingleObject(to_handle(m_process), 0);
     if (waited == win32::WAIT_TIMEOUT_)
       return Option<ExitStatus>{};
     if (waited != win32::WAIT_OBJECT_0_)
@@ -417,7 +450,9 @@ namespace au::proc
   {
     if (m_process == -1)
       return fail("proc::Process::terminate: no process");
-    if (::TerminateProcess(to_handle(m_process), 1) == 0)
+    // SAFETY: m_process is an open process handle.
+    AU_UNSAFE const int killed = ::TerminateProcess(to_handle(m_process), 1);
+    if (killed == 0)
       return fail(Error::os_last().ctx("proc::Process::terminate"));
     return {};
   }
@@ -444,9 +479,13 @@ namespace au::proc
     const String exe_path(exe.c_str());
 
     Vec<char *> argv;
-    argv.push_back(const_cast<char *>(exe_path.c_str()));
+    // SAFETY: exec takes char *const[] for historical reasons and does not write to the strings.
+    AU_UNSAFE argv.push_back(const_cast<char *>(exe_path.c_str()));
     for (usize i = 0; i < opts.args.size(); i++)
-      argv.push_back(const_cast<char *>(opts.args[i].c_str()));
+    {
+      // SAFETY: as above.
+      AU_UNSAFE argv.push_back(const_cast<char *>(opts.args[i].c_str()));
+    }
     argv.push_back(nullptr);
 
     Vec<String> env_storage;
@@ -461,7 +500,10 @@ namespace au::proc
         env_storage.push_back(static_cast<String &&>(entry));
       }
       for (usize i = 0; i < env_storage.size(); i++)
-        envp.push_back(const_cast<char *>(env_storage[i].c_str()));
+      {
+        // SAFETY: as for argv; env_storage is complete, so the strings no longer move.
+        AU_UNSAFE envp.push_back(const_cast<char *>(env_storage[i].c_str()));
+      }
       envp.push_back(nullptr);
     }
 
@@ -477,7 +519,8 @@ namespace au::proc
     if (pid < 0)
     {
       const int saved = errno;
-      for (ChildStdio *io : {&io_in, &io_out, &io_err})
+      // SAFETY: the three locals above outlive the loop.
+      AU_UNSAFE for (ChildStdio *io : {&io_in, &io_out, &io_err})
       {
         if (io->child_fd != -1)
           ::close(io->child_fd);
@@ -502,31 +545,43 @@ namespace au::proc
         ::_exit(126);
       if (io_err.child_fd != -1 && ::dup2(io_err.child_fd, 2) < 0)
         ::_exit(126);
-      for (ChildStdio *io : {&io_in, &io_out, &io_err})
+      // SAFETY: the three locals above outlive the loop.
+      AU_UNSAFE for (ChildStdio *io : {&io_in, &io_out, &io_err})
       {
         if (io->child_fd > 2)
           ::close(io->child_fd);
         if (io->parent_end != -1)
           ::close(static_cast<int>(io->parent_end));
       }
-      if (chdir_to != nullptr && ::chdir(chdir_to) != 0)
+      // SAFETY: chdir_to is null-terminated and points into opts.working_dir.
+      AU_UNSAFE if (chdir_to != nullptr && ::chdir(chdir_to) != 0)
         ::_exit(126);
       if (opts.env.has_value())
-        ::execve(exe_path.c_str(), argv.data(), envp.data());
+      {
+        // SAFETY: argv and envp end in null and point into strings that are alive in the child's copy of memory.
+        AU_UNSAFE ::execve(exe_path.c_str(), argv.data(), envp.data());
+      }
       else
-        ::execv(exe_path.c_str(), argv.data());
+      {
+        // SAFETY: argv ends in null and points into strings that are alive in the child's copy of memory.
+        AU_UNSAFE ::execv(exe_path.c_str(), argv.data());
+      }
       ::_exit(127);
     }
 
     // Parent: the child ends belong to the child now.
-    for (ChildStdio *io : {&io_in, &io_out, &io_err})
+    // SAFETY: the three locals above outlive the loop.
+    AU_UNSAFE for (ChildStdio *io : {&io_in, &io_out, &io_err})
     {
       if (io->child_fd != -1)
         ::close(io->child_fd);
     }
 
     if (opts.lifetime != nullptr)
-      opts.lifetime->m_pids.push_back(static_cast<u64>(pid));
+    {
+      // SAFETY: not null, and the caller keeps the group alive for this call.
+      AU_UNSAFE opts.lifetime->m_pids.push_back(static_cast<u64>(pid));
+    }
 
     Process process;
     process.m_process = static_cast<i64>(pid);
@@ -555,7 +610,8 @@ namespace au::proc
     int status = 0;
     for (;;)
     {
-      const pid_t reaped = ::waitpid(static_cast<pid_t>(m_process), &status, 0);
+      // SAFETY: writes one int into status.
+      AU_UNSAFE const pid_t reaped = ::waitpid(static_cast<pid_t>(m_process), &status, 0);
       if (reaped >= 0)
         break;
       if (errno == EINTR)
@@ -581,7 +637,8 @@ namespace au::proc
       return fail("proc::Process::try_status: no process");
 
     int status = 0;
-    const pid_t reaped = ::waitpid(static_cast<pid_t>(m_process), &status, WNOHANG);
+    // SAFETY: writes one int into status.
+    AU_UNSAFE const pid_t reaped = ::waitpid(static_cast<pid_t>(m_process), &status, WNOHANG);
     if (reaped == 0)
       return Option<ExitStatus>{};
     if (reaped < 0)

@@ -118,7 +118,7 @@ public:
     }
 
 public:
-    Logger(Mutex &logger_mutex);
+    explicit Logger(Mutex &logger_mutex);
 
     auto set_log_handler(LogHandler_FuncT handler) -> void
     {
@@ -208,14 +208,17 @@ public:
 
       memory::HeapAllocator heap{};
       void *mem = heap.alloc(sizeof(Invoker), alignof(Invoker));
-      Invoker *invoker =
+      // SAFETY: mem is fresh and has the size and alignment of Invoker.
+      AU_UNSAFE Invoker *invoker =
           au::construct_at(static_cast<Invoker *>(mem),
                            Invoker{std::forward<F>(f), std::make_tuple(std::forward<Args>(args)...)});
 
       const auto entry = +[](void *raw) {
         auxid::WorkerThreadGuard _guard;
-        auto *inv = static_cast<Invoker *>(raw);
-        std::apply(std::move(inv->func), std::move(inv->tup));
+        // SAFETY: raw is the Invoker create() made; spawning handed it to this thread alone.
+        AU_UNSAFE auto *inv = static_cast<Invoker *>(raw);
+        // SAFETY: inv stays alive until destroy_at below.
+        AU_UNSAFE std::apply(std::move(inv->func), std::move(inv->tup));
         au::destroy_at(inv);
         memory::HeapAllocator{}.free(inv, sizeof(Invoker), alignof(Invoker));
       };
