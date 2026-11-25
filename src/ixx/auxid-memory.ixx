@@ -98,12 +98,12 @@ public:
     = default;
 
     // Implicit, so a Vec can be built straight from a handle: Vec<T, A> v(handle).
-    constexpr StdAllocatorAdapter(A alloc) noexcept : m_alloc(alloc)
+    AU_IMPLICIT constexpr StdAllocatorAdapter(A alloc) noexcept : m_alloc(alloc)
     {
     }
 
     template<typename U>
-    constexpr StdAllocatorAdapter(const StdAllocatorAdapter<U, A> &other) noexcept : m_alloc(other.inner())
+    AU_IMPLICIT constexpr StdAllocatorAdapter(const StdAllocatorAdapter<U, A> &other) noexcept : m_alloc(other.inner())
     {
     }
 
@@ -116,7 +116,8 @@ public:
     {
       if (n > (static_cast<size_type>(-1) / sizeof(T)))
         panic_at("StdAllocatorAdapter::allocate: byte count overflows", __FILE__, __LINE__);
-      return static_cast<T *>(m_alloc.alloc(n * sizeof(T), alignof(T)));
+      // SAFETY: the block has the size and alignment for n objects of T; building them is the container's job.
+      AU_UNSAFE return static_cast<T *>(m_alloc.alloc(n * sizeof(T), alignof(T)));
     }
 
     auto deallocate(T *p, size_type n) noexcept -> void
@@ -172,26 +173,31 @@ private:
     [[nodiscard]] static inline auto sys_aligned_alloc(usize size, usize align) -> void *
     {
 #  if defined(_WIN32)
-      return ::_aligned_malloc(size, align);
+      // SAFETY: released with _aligned_free.
+      AU_UNSAFE return ::_aligned_malloc(size, align);
 #  else
       const usize aligned_size = (size + align - 1) & ~(align - 1);
-      return std::aligned_alloc(align, aligned_size);
+      // SAFETY: the size is a multiple of the alignment, as required; released with std::free.
+      AU_UNSAFE return std::aligned_alloc(align, aligned_size);
 #  endif
     }
 
     static inline auto sys_aligned_free(void *ptr) -> void
     {
 #  if defined(_WIN32)
-      ::_aligned_free(ptr);
+      // SAFETY: ptr came from _aligned_malloc, or is null.
+      AU_UNSAFE ::_aligned_free(ptr);
 #  else
-      std::free(ptr);
+      // SAFETY: ptr came from std::aligned_alloc, or is null.
+      AU_UNSAFE std::free(ptr);
 #  endif
     }
 
 public:
     [[nodiscard]] inline auto alloc(usize size) -> void *
     {
-      void *p = std::malloc(size);
+      // SAFETY: released with std::free or std::realloc; null is handled below.
+      AU_UNSAFE void *p = std::malloc(size);
       if (!p)
         panic_at("HeapAllocator::alloc: out of memory", __FILE__, __LINE__);
       return p;
@@ -209,12 +215,14 @@ public:
 
     [[nodiscard]] inline auto try_alloc(usize size) -> void *
     {
-      return std::malloc(size);
+      // SAFETY: released with std::free or std::realloc; the caller handles null.
+      AU_UNSAFE return std::malloc(size);
     }
 
     [[nodiscard]] inline auto try_alloc(usize size, usize align) -> void *
     {
-      if (align <= SYSTEM_MALLOC_NATURAL_ALIGN)
+      // SAFETY: released with std::free or std::realloc; the caller handles null.
+      AU_UNSAFE if (align <= SYSTEM_MALLOC_NATURAL_ALIGN)
         return std::malloc(size);
       return sys_aligned_alloc(size, align);
     }
@@ -223,7 +231,8 @@ public:
     {
       if (align <= SYSTEM_MALLOC_NATURAL_ALIGN)
       {
-        void *p = std::realloc(ptr, new_size);
+        // SAFETY: ptr came from std::malloc, because the alignment is not extended, or is null.
+        AU_UNSAFE void *p = std::realloc(ptr, new_size);
         if (!p)
           panic_at("HeapAllocator::realloc: out of memory", __FILE__, __LINE__);
         return p;
@@ -231,7 +240,8 @@ public:
       void *fresh = alloc(new_size, align);
       if (ptr)
       {
-        std::memcpy(fresh, ptr, old_size < new_size ? old_size : new_size);
+        // SAFETY: both blocks hold at least that many bytes, and fresh is a new block.
+        AU_UNSAFE std::memcpy(fresh, ptr, old_size < new_size ? old_size : new_size);
         sys_aligned_free(ptr);
       }
       return fresh;
@@ -240,7 +250,8 @@ public:
     inline auto free(void *ptr, usize size, usize align) -> void
     {
       AU_UNUSED(size);
-      if (align <= SYSTEM_MALLOC_NATURAL_ALIGN)
+      // SAFETY: the same alignment chose std::malloc in alloc, or ptr is null.
+      AU_UNSAFE if (align <= SYSTEM_MALLOC_NATURAL_ALIGN)
         std::free(ptr);
       else
         sys_aligned_free(ptr);
@@ -274,7 +285,8 @@ public:
 
     [[nodiscard]] inline auto realloc(void *ptr, usize old_size, usize new_size, usize align) -> void *
     {
-      void *p = ::rpaligned_realloc(ptr, align, new_size, old_size, 0);
+      // SAFETY: ptr came from this allocator, or is null.
+      AU_UNSAFE void *p = ::rpaligned_realloc(ptr, align, new_size, old_size, 0);
       if (!p)
         panic_at("HeapAllocator::realloc: out of memory", __FILE__, __LINE__);
       return p;
@@ -284,7 +296,8 @@ public:
     {
       AU_UNUSED(size);
       AU_UNUSED(align);
-      ::rpfree(ptr);
+      // SAFETY: ptr came from this allocator, or is null.
+      AU_UNSAFE ::rpfree(ptr);
     }
 #endif
   };
@@ -333,8 +346,10 @@ export namespace au::memory
     // is released.
     [[nodiscard]] auto debug_retain_handle(const void *handle) noexcept -> bool
     {
-      const uintptr_t base = reinterpret_cast<uintptr_t>(buffer);
-      const uintptr_t addr = reinterpret_cast<uintptr_t>(handle);
+      // SAFETY: the addresses are only compared.
+      AU_UNSAFE const uintptr_t base = reinterpret_cast<uintptr_t>(buffer);
+      // SAFETY: the addresses are only compared.
+      AU_UNSAFE const uintptr_t addr = reinterpret_cast<uintptr_t>(handle);
       if (addr >= base && addr - base < length)
         return false;
       m_live_handles.fetch_add(1, std::memory_order_relaxed);
@@ -383,14 +398,16 @@ export namespace au::memory
 
     [[nodiscard]] inline auto try_alloc(usize size, usize align) -> void *
     {
-      uintptr_t curr_addr = reinterpret_cast<uintptr_t>(buffer) + offset;
+      // SAFETY: the address is only used to compute the padding.
+      AU_UNSAFE uintptr_t curr_addr = reinterpret_cast<uintptr_t>(buffer) + offset;
       uintptr_t misalignment = curr_addr & (align - 1);
       usize padding = (align - misalignment) & (align - 1);
 
       if (offset > length || padding > length - offset || size > length - offset - padding)
         return nullptr;
 
-      void *ptr = buffer + offset + padding;
+      // SAFETY: the check above keeps this and the size bytes after it inside the buffer.
+      AU_UNSAFE void *ptr = buffer + offset + padding;
       offset += padding + size;
       return ptr;
     }
@@ -405,8 +422,10 @@ export namespace au::memory
       if (!ptr)
         return alloc(new_size, align);
 
-      const uintptr_t base = reinterpret_cast<uintptr_t>(buffer);
-      const uintptr_t addr = reinterpret_cast<uintptr_t>(ptr);
+      // SAFETY: the addresses are only compared.
+      AU_UNSAFE const uintptr_t base = reinterpret_cast<uintptr_t>(buffer);
+      // SAFETY: the addresses are only compared.
+      AU_UNSAFE const uintptr_t addr = reinterpret_cast<uintptr_t>(ptr);
       const bool is_last = addr >= base && addr + old_size == base + offset;
       if ((addr & (align - 1)) == 0)
       {
@@ -424,7 +443,8 @@ export namespace au::memory
       }
 
       void *fresh = alloc(new_size, align);
-      std::memcpy(fresh, ptr, old_size < new_size ? old_size : new_size);
+      // SAFETY: both blocks hold at least that many bytes, and fresh is a new block.
+      AU_UNSAFE std::memcpy(fresh, ptr, old_size < new_size ? old_size : new_size);
       return fresh;
     }
 
@@ -508,12 +528,14 @@ public:
 
     [[nodiscard]] inline auto alloc(usize size) const -> void *
     {
-      return m_alloc->alloc(size);
+      // SAFETY: m_alloc is never null, and the allocator outlives every handle (see above).
+      AU_UNSAFE return m_alloc->alloc(size);
     }
 
     [[nodiscard]] inline auto alloc(usize size, usize align) const -> void *
     {
-      return m_alloc->alloc(size, align);
+      // SAFETY: m_alloc is never null, and the allocator outlives every handle (see above).
+      AU_UNSAFE return m_alloc->alloc(size, align);
     }
 
     [[nodiscard]] inline auto try_alloc(usize size) const -> void *
@@ -521,7 +543,8 @@ public:
         { a.try_alloc(s) } -> std::same_as<void *>;
       }
     {
-      return m_alloc->try_alloc(size);
+      // SAFETY: m_alloc is never null, and the allocator outlives every handle (see above).
+      AU_UNSAFE return m_alloc->try_alloc(size);
     }
 
     [[nodiscard]] inline auto try_alloc(usize size, usize align) const -> void *
@@ -529,22 +552,26 @@ public:
         { a.try_alloc(s, s) } -> std::same_as<void *>;
       }
     {
-      return m_alloc->try_alloc(size, align);
+      // SAFETY: m_alloc is never null, and the allocator outlives every handle (see above).
+      AU_UNSAFE return m_alloc->try_alloc(size, align);
     }
 
     [[nodiscard]] inline auto realloc(void *ptr, usize old_size, usize new_size, usize align) const -> void *
     {
-      return m_alloc->realloc(ptr, old_size, new_size, align);
+      // SAFETY: m_alloc is never null, and the allocator outlives every handle (see above).
+      AU_UNSAFE return m_alloc->realloc(ptr, old_size, new_size, align);
     }
 
     inline auto free(void *ptr, usize size, usize align) const -> void
     {
-      m_alloc->free(ptr, size, align);
+      // SAFETY: m_alloc is never null, and the allocator outlives every handle (see above).
+      AU_UNSAFE m_alloc->free(ptr, size, align);
     }
 
     [[nodiscard]] constexpr auto get() const noexcept -> A &
     {
-      return *m_alloc;
+      // SAFETY: m_alloc is never null, and the allocator outlives every handle (see above).
+      AU_UNSAFE return *m_alloc;
     }
 
     [[nodiscard]] friend constexpr auto operator==(const AllocatorRef &a, const AllocatorRef &b) noexcept -> bool
@@ -562,7 +589,8 @@ private:
     auto retain() noexcept -> void
     {
       if constexpr (TRACKS_HANDLES)
-        m_counted = m_alloc->debug_retain_handle(this);
+        // SAFETY: m_alloc is never null, and the allocator outlives every handle (see above).
+        AU_UNSAFE m_counted = m_alloc->debug_retain_handle(this);
     }
 
     auto release() noexcept -> void
@@ -570,7 +598,8 @@ private:
       if constexpr (TRACKS_HANDLES)
       {
         if (m_counted)
-          m_alloc->debug_release_handle();
+          // SAFETY: m_alloc is never null, and the allocator outlives every handle (see above).
+          AU_UNSAFE m_alloc->debug_release_handle();
         m_counted = false;
       }
     }
@@ -608,8 +637,13 @@ export namespace au::memory
     {
       if (ptr)
       {
-        ptr->~T();
-        const_cast<AuxidDeleter *>(this)->m_alloc.free(ptr, sizeof(T), alignof(T));
+        // SAFETY: unique_ptr passes the object it owns, once. The allocator is a handle: free changes
+        // nothing in it, so dropping const is harmless.
+        AU_UNSAFE
+        {
+          ptr->~T();
+          const_cast<AuxidDeleter *>(this)->m_alloc.free(ptr, sizeof(T), alignof(T));
+        }
       }
     }
   };
@@ -624,7 +658,8 @@ export namespace au::memory
     void *mem = alloc.alloc(sizeof(T), alignof(T));
     if (!mem)
       panic_at("make_box: allocation failed", __FILE__, __LINE__);
-    T *ptr = new (mem) T(std::forward<Args>(args)...);
+    // SAFETY: mem is fresh, not null, and has the size and alignment of T.
+    AU_UNSAFE T *ptr = new (mem) T(std::forward<Args>(args)...);
     return Box<T, AuxidDeleter<T, Allocator>>(ptr, AuxidDeleter<T, Allocator>(alloc));
   }
 
@@ -648,7 +683,8 @@ export namespace au::memory
     void *mem = alloc.alloc(sizeof(T), alignof(T));
     if (!mem)
       panic_at("make_box_protected: allocation failed", __FILE__, __LINE__);
-    T *ptr = new (mem) Enabler(std::forward<Args>(args)...);
+    // SAFETY: mem is fresh, not null, and has the size and alignment of T. Enabler adds no members.
+    AU_UNSAFE T *ptr = new (mem) Enabler(std::forward<Args>(args)...);
     return Box<T, AuxidDeleter<T, Allocator>>(ptr, AuxidDeleter<T, Allocator>(alloc));
   }
 
@@ -710,17 +746,20 @@ public:
 
     [[nodiscard]] auto get() const noexcept -> T *
     {
-      return m_block ? &m_block->storage : nullptr;
+      // SAFETY: m_block is null or a block this Arc holds a reference to.
+      AU_UNSAFE return m_block ? &m_block->storage : nullptr;
     }
 
     [[nodiscard]] auto operator->() const noexcept -> T *
     {
-      return &m_block->storage;
+      // SAFETY: the caller must not dereference an empty Arc.
+      AU_UNSAFE return &m_block->storage;
     }
 
     [[nodiscard]] auto operator*() const noexcept -> T &
     {
-      return m_block->storage;
+      // SAFETY: the caller must not dereference an empty Arc.
+      AU_UNSAFE return m_block->storage;
     }
 
     [[nodiscard]] explicit operator bool() const noexcept
@@ -730,7 +769,8 @@ public:
 
     [[nodiscard]] auto use_count() const noexcept -> u32
     {
-      return m_block ? m_block->refs.load(std::memory_order_relaxed) : 0;
+      // SAFETY: m_block is null or a block this Arc holds a reference to.
+      AU_UNSAFE return m_block ? m_block->refs.load(std::memory_order_relaxed) : 0;
     }
 
     auto reset() noexcept -> void
@@ -766,7 +806,8 @@ private:
 
     auto retain() const noexcept -> void
     {
-      if (m_block)
+      // SAFETY: m_block is null or a block this Arc, or the one it was copied from, holds a reference to.
+      AU_UNSAFE if (m_block)
         m_block->refs.fetch_add(1, std::memory_order_relaxed);
     }
 
@@ -774,7 +815,8 @@ private:
     {
       if (!m_block)
         return;
-      if (m_block->refs.fetch_sub(1, std::memory_order_release) == 1)
+      // SAFETY: this Arc holds a reference, so the block is alive; taking the last one leaves it to this thread.
+      AU_UNSAFE if (m_block->refs.fetch_sub(1, std::memory_order_release) == 1)
       {
         std::atomic_thread_fence(std::memory_order_acquire);
         m_block->~ControlBlock();
@@ -793,7 +835,8 @@ private:
     void *mem = alloc.alloc(sizeof(CB), alignof(CB));
     if (!mem)
       panic_at("make_arc: allocation failed", __FILE__, __LINE__);
-    auto *cb = new (mem) CB(std::forward<Args>(args)...);
+    // SAFETY: mem is fresh, not null, and has the size and alignment of CB.
+    AU_UNSAFE auto *cb = new (mem) CB(std::forward<Args>(args)...);
     return Arc<T, Allocator>(cb, alloc);
   }
 
@@ -821,7 +864,8 @@ private:
     void *mem = alloc.alloc(sizeof(CB), alignof(CB));
     if (!mem)
       panic_at("make_arc_protected: allocation failed", __FILE__, __LINE__);
-    auto *cb = new (mem) CB(Enabler(std::forward<Args>(args)...));
+    // SAFETY: mem is fresh, not null, and has the size and alignment of CB.
+    AU_UNSAFE auto *cb = new (mem) CB(Enabler(std::forward<Args>(args)...));
     return Arc<T, Allocator>(cb, alloc);
   }
 
@@ -887,7 +931,8 @@ public:
 
     explicit IntrusiveArc(T *ptr, Allocator alloc) noexcept : m_ptr(ptr), m_alloc(alloc)
     {
-      if (m_ptr)
+      // SAFETY: checked, and the caller keeps the object alive until this reference is taken.
+      AU_UNSAFE if (m_ptr)
         m_ptr->arc_retain();
     }
 
@@ -898,7 +943,8 @@ public:
 
     IntrusiveArc(const IntrusiveArc &o) noexcept : m_ptr(o.m_ptr), m_alloc(o.m_alloc)
     {
-      if (m_ptr)
+      // SAFETY: checked, and the caller keeps the object alive until this reference is taken.
+      AU_UNSAFE if (m_ptr)
         m_ptr->arc_retain();
     }
 
@@ -933,7 +979,8 @@ public:
 
     [[nodiscard]] auto operator*() const noexcept -> T &
     {
-      return *m_ptr;
+      // SAFETY: the caller must not dereference an empty IntrusiveArc.
+      AU_UNSAFE return *m_ptr;
     }
 
     [[nodiscard]] explicit operator bool() const noexcept
@@ -943,7 +990,8 @@ public:
 
     [[nodiscard]] auto use_count() const noexcept -> u32
     {
-      return m_ptr ? m_ptr->arc_count() : 0;
+      // SAFETY: m_ptr is null or an object this IntrusiveArc holds a reference to.
+      AU_UNSAFE return m_ptr ? m_ptr->arc_count() : 0;
     }
 
     auto reset() noexcept -> void
@@ -974,7 +1022,9 @@ private:
 
     auto release() noexcept -> void
     {
-      if (m_ptr && m_ptr->arc_release())
+      // SAFETY: this IntrusiveArc holds a reference, so the object is alive; taking the last one leaves it to
+      // this thread. It came from m_alloc, which the constructor requires.
+      AU_UNSAFE if (m_ptr && m_ptr->arc_release())
       {
         m_ptr->~T();
         m_alloc.free(m_ptr, sizeof(T), alignof(T));
@@ -991,7 +1041,8 @@ private:
     void *mem = alloc.alloc(sizeof(T), alignof(T));
     if (!mem)
       panic_at("make_intrusive_arc: allocation failed", __FILE__, __LINE__);
-    auto *p = new (mem) T(std::forward<Args>(args)...);
+    // SAFETY: mem is fresh, not null, and has the size and alignment of T.
+    AU_UNSAFE auto *p = new (mem) T(std::forward<Args>(args)...);
     return IntrusiveArc<T, Allocator>(p, alloc);
   }
 
