@@ -1,3 +1,4 @@
+// auxid: trust-level 1
 // Auxid: The Rigid C++ Platform.
 //
 // Copyright (C) 2026 I-A-S (ias@iasoft.dev)
@@ -49,25 +50,31 @@ namespace au::ipc
 
     [[nodiscard]] auto to_handle(i64 native) noexcept -> void *
     {
-      return reinterpret_cast<void *>(static_cast<std::intptr_t>(native));
+      // SAFETY: a HANDLE stored as an integer; it is only passed back to the OS.
+      AU_UNSAFE return reinterpret_cast<void *>(static_cast<std::intptr_t>(native));
     }
 
     [[nodiscard]] auto from_handle(void *handle) noexcept -> i64
     {
-      return static_cast<i64>(reinterpret_cast<std::intptr_t>(handle));
+      // SAFETY: a HANDLE fits in 64 bits; to_handle reverses this.
+      AU_UNSAFE return static_cast<i64>(reinterpret_cast<std::intptr_t>(handle));
     }
 
     [[nodiscard]] auto widen(StringView utf8) -> Vec<wchar_t>
     {
+      if (utf8.size() > win32::MAX_TEXT_)
+        panic("text of more than 2 GB passed to the OS");
       Vec<wchar_t> wide;
       if (!utf8.empty())
       {
-        const int needed = ::MultiByteToWideChar(win32::CP_UTF8_, 0, utf8.data(),
+        // SAFETY: reads utf8.size() bytes and only counts.
+        AU_UNSAFE const int needed = ::MultiByteToWideChar(win32::CP_UTF8_, 0, utf8.data(),
                                                  static_cast<int>(utf8.size()), nullptr, 0);
         if (needed > 0)
         {
           wide.resize(static_cast<usize>(needed));
-          ::MultiByteToWideChar(win32::CP_UTF8_, 0, utf8.data(), static_cast<int>(utf8.size()),
+          // SAFETY: the same input, written to the `needed` units just allocated.
+          AU_UNSAFE ::MultiByteToWideChar(win32::CP_UTF8_, 0, utf8.data(), static_cast<int>(utf8.size()),
                                 wide.data(), needed);
         }
       }
@@ -87,7 +94,8 @@ namespace au::ipc
     {
       const String full = pipe_name_utf8(name);
       const Vec<wchar_t> wfull = widen(StringView(full.data(), full.size()));
-      void *handle = ::CreateNamedPipeW(wfull.data(), win32::PIPE_ACCESS_DUPLEX_,
+      // SAFETY: widen null-terminates, and the name outlives the call.
+      AU_UNSAFE void *handle = ::CreateNamedPipeW(wfull.data(), win32::PIPE_ACCESS_DUPLEX_,
                                         win32::PIPE_TYPE_BYTE_STREAM_,
                                         win32::PIPE_UNLIMITED_INSTANCES_, 64 * 1024, 64 * 1024, 0,
                                         nullptr);
@@ -98,9 +106,13 @@ namespace au::ipc
 
     [[nodiscard]] auto read_handle(i64 native, Span<u8> buffer, const char *op) -> Result<usize>
     {
+      // A short read is allowed; a size cut to 32 bits could become 0, which reads as end of stream.
+      const unsigned long want =
+          buffer.size() < win32::MAX_TEXT_ ? static_cast<unsigned long>(buffer.size()) : win32::MAX_TEXT_;
       unsigned long got = 0;
-      if (::ReadFile(to_handle(native), buffer.data(), static_cast<unsigned long>(buffer.size()),
-                     &got, nullptr) == 0)
+      // SAFETY: writes at most buffer.size() bytes into buffer, and the count into got.
+      AU_UNSAFE const int ok = ::ReadFile(to_handle(native), buffer.data(), want, &got, nullptr);
+      if (ok == 0)
       {
         Error err = Error::os_last();
         if (static_cast<unsigned long>(err.code) == win32::ERROR_BROKEN_PIPE_)
@@ -112,9 +124,12 @@ namespace au::ipc
 
     [[nodiscard]] auto write_handle(i64 native, Span<const u8> data, const char *op) -> Result<usize>
     {
+      const unsigned long want =
+          data.size() < win32::MAX_TEXT_ ? static_cast<unsigned long>(data.size()) : win32::MAX_TEXT_;
       unsigned long put = 0;
-      if (::WriteFile(to_handle(native), data.data(), static_cast<unsigned long>(data.size()), &put,
-                      nullptr) == 0)
+      // SAFETY: reads at most data.size() bytes of data, and writes the count into put.
+      AU_UNSAFE const int ok = ::WriteFile(to_handle(native), data.data(), want, &put, nullptr);
+      if (ok == 0)
         return fail(Error::os_last().ctx(op));
       return static_cast<usize>(put);
     }
@@ -123,7 +138,8 @@ namespace au::ipc
     {
       if (native != K_INVALID_IPC_HANDLE)
       {
-        ::CloseHandle(to_handle(native));
+        // SAFETY: native is an open handle this object owns; it is cleared below, so it is closed once.
+        AU_UNSAFE ::CloseHandle(to_handle(native));
         native = K_INVALID_IPC_HANDLE;
       }
     }
@@ -133,7 +149,9 @@ namespace au::ipc
     // Contract realization: <XDG_RUNTIME_DIR|/tmp>/auxid.<name>.sock|.lock
     [[nodiscard]] auto runtime_path(StringView name, const char *suffix) -> String
     {
-      const char *base = ::getenv("XDG_RUNTIME_DIR");
+      // SAFETY: the value is copied before anything here can change it; a set() on another thread at the same time
+      // is the caller's error (docs/OS-CONTRACT.md).
+      AU_UNSAFE const char *base = ::getenv("XDG_RUNTIME_DIR");
       String path(base != nullptr ? base : "/tmp");
       path.append("/auxid.");
       path.append(name);
@@ -145,7 +163,8 @@ namespace au::ipc
     {
 #  if defined(SO_NOSIGPIPE)
       int one = 1;
-      ::setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &one, sizeof(one));
+      // SAFETY: reads sizeof(one) bytes of one.
+      AU_UNSAFE ::setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &one, sizeof(one));
 #  else
       AU_UNUSED(fd);
 #  endif
@@ -155,9 +174,11 @@ namespace au::ipc
     {
       if (path.size() + 1 > sizeof(addr.sun_path))
         return false;
-      std::memset(&addr, 0, sizeof(addr));
+      // SAFETY: sockaddr_un is a C struct, all zeros is a valid value of it.
+      AU_UNSAFE std::memset(&addr, 0, sizeof(addr));
       addr.sun_family = AF_UNIX;
-      std::memcpy(addr.sun_path, path.c_str(), path.size() + 1);
+      // SAFETY: the size, with its terminator, was checked against sun_path above.
+      AU_UNSAFE std::memcpy(addr.sun_path, path.c_str(), path.size() + 1);
       return true;
     }
 
@@ -165,7 +186,8 @@ namespace au::ipc
     {
       for (;;)
       {
-        const auto got = ::read(static_cast<int>(native), buffer.data(), buffer.size());
+        // SAFETY: writes at most buffer.size() bytes into buffer.
+        AU_UNSAFE const auto got = ::read(static_cast<int>(native), buffer.data(), buffer.size());
         if (got >= 0)
           return static_cast<usize>(got); // 0 = end of stream
         if (errno == EINTR)
@@ -180,12 +202,14 @@ namespace au::ipc
       for (;;)
       {
 #  if defined(MSG_NOSIGNAL)
-        const auto put = is_socket
+        // SAFETY: reads at most data.size() bytes of data.
+        AU_UNSAFE const auto put = is_socket
                              ? ::send(static_cast<int>(native), data.data(), data.size(), MSG_NOSIGNAL)
                              : ::write(static_cast<int>(native), data.data(), data.size());
 #  else
         AU_UNUSED(is_socket); // SO_NOSIGPIPE was set at socket creation
-        const auto put = ::write(static_cast<int>(native), data.data(), data.size());
+        // SAFETY: reads at most data.size() bytes of data.
+        AU_UNSAFE const auto put = ::write(static_cast<int>(native), data.data(), data.size());
 #  endif
         if (put >= 0)
           return static_cast<usize>(put);
@@ -295,7 +319,9 @@ namespace au::ipc
   {
     void *read_end = nullptr;
     void *write_end = nullptr;
-    if (::CreatePipe(&read_end, &write_end, nullptr, 0) == 0)
+    // SAFETY: writes the two handles; null security and size 0 mean the defaults.
+    AU_UNSAFE const int ok = ::CreatePipe(&read_end, &write_end, nullptr, 0);
+    if (ok == 0)
       return fail(Error::os_last().ctx("ipc::pipe"));
     return PipePair{PipeReader::adopt_native(from_handle(read_end)),
                     PipeWriter::adopt_native(from_handle(write_end))};
@@ -328,7 +354,8 @@ namespace au::ipc
 
     for (int attempt = 0; attempt < 8; attempt++)
     {
-      void *handle = ::CreateFileW(wfull.data(), win32::GENERIC_READ_ | win32::GENERIC_WRITE_, 0,
+      // SAFETY: widen null-terminates, and the name outlives the call.
+      AU_UNSAFE void *handle = ::CreateFileW(wfull.data(), win32::GENERIC_READ_ | win32::GENERIC_WRITE_, 0,
                                    nullptr, win32::OPEN_EXISTING_, 0, nullptr);
       if (handle != win32::invalid_handle())
         return Channel::adopt_native(from_handle(handle));
@@ -337,7 +364,8 @@ namespace au::ipc
       if (static_cast<unsigned long>(err.code) != win32::ERROR_PIPE_BUSY_)
         return fail(std::move(err).ctx("ipc::Channel::connect"));
       // All instances busy: wait for the server to create a fresh one.
-      ::WaitNamedPipeW(wfull.data(), 2000);
+      // SAFETY: widen null-terminates, and the name outlives the call.
+      AU_UNSAFE ::WaitNamedPipeW(wfull.data(), 2000);
     }
     return fail("ipc::Channel::connect: pipe stayed busy");
   }
@@ -371,7 +399,9 @@ namespace au::ipc
     if (m_native == K_INVALID_IPC_HANDLE)
       return fail("ipc::ChannelListener::accept: listener is closed");
 
-    if (::ConnectNamedPipe(to_handle(m_native), nullptr) == 0)
+    // SAFETY: m_native is an open pipe handle; a null overlapped means a blocking call.
+    AU_UNSAFE const int ok = ::ConnectNamedPipe(to_handle(m_native), nullptr);
+    if (ok == 0)
     {
       Error err = Error::os_last();
       // A client that connected between CreateNamedPipe and ConnectNamedPipe.
@@ -386,7 +416,8 @@ namespace au::ipc
     auto next = create_listener_instance(StringView(m_name.data(), m_name.size()));
     if (next.is_err())
     {
-      ::CloseHandle(to_handle(connected));
+      // SAFETY: connected was taken out of m_native and has no other owner.
+      AU_UNSAFE ::CloseHandle(to_handle(connected));
       return fail(std::move(next.unwrap_err()));
     }
     m_native = from_handle(next.unwrap());
@@ -405,14 +436,16 @@ namespace au::ipc
     full.append(app_key);
     const Vec<wchar_t> wfull = widen(StringView(full.data(), full.size()));
 
-    void *handle = ::CreateMutexW(nullptr, 1, wfull.data());
+    // SAFETY: widen null-terminates, and the name outlives the call.
+    AU_UNSAFE void *handle = ::CreateMutexW(nullptr, 1, wfull.data());
     if (handle == nullptr)
       return fail(Error::os_last().ctx("ipc::InstanceLock::acquire"));
 
     const Error last = Error::os_last();
     if (static_cast<unsigned long>(last.code) == win32::ERROR_ALREADY_EXISTS_)
     {
-      ::CloseHandle(handle);
+      // SAFETY: the handle was just opened and has no other owner.
+      AU_UNSAFE ::CloseHandle(handle);
       return fail(Error(ErrorDomain::Os, last.code,
                         String("ipc::InstanceLock::acquire: instance already held")));
     }
@@ -446,7 +479,9 @@ namespace au::ipc
   AUXID_API auto pipe() -> Result<PipePair>
   {
     int fds[2] = {-1, -1};
-    if (::pipe(fds) != 0)
+    // SAFETY: writes the two descriptors into fds.
+    AU_UNSAFE const int status = ::pipe(fds);
+    if (status != 0)
       return fail(Error::os(errno).ctx("ipc::pipe"));
     return PipePair{PipeReader::adopt_native(fds[0]), PipeWriter::adopt_native(fds[1])};
   }
@@ -483,7 +518,9 @@ namespace au::ipc
       return fail(Error::os(errno).ctx("ipc::Channel::connect"));
     set_nosigpipe(fd);
 
-    if (::connect(fd, reinterpret_cast<const sockaddr *>(&addr), sizeof(addr)) != 0)
+    // SAFETY: the socket API takes every address as a sockaddr and goes by the family and size.
+    AU_UNSAFE const int status = ::connect(fd, reinterpret_cast<const sockaddr *>(&addr), sizeof(addr));
+    if (status != 0)
     {
       const int saved = errno;
       ::close(fd);
@@ -520,14 +557,23 @@ namespace au::ipc
       const int probe = ::socket(AF_UNIX, SOCK_STREAM, 0);
       if (probe >= 0)
       {
-        if (::connect(probe, reinterpret_cast<const sockaddr *>(&addr), sizeof(addr)) == 0)
+        // SAFETY: the socket API takes every address as a sockaddr and goes by the family and size.
+        AU_UNSAFE const int status = ::connect(probe, reinterpret_cast<const sockaddr *>(&addr), sizeof(addr));
+        if (status == 0)
         {
           ::close(probe);
           return fail(Error(ErrorDomain::Os, EADDRINUSE,
                             String("ipc::ChannelListener::bind: name already in use")));
         }
+        const int saved = errno;
         ::close(probe);
-        ::unlink(path.c_str());
+        if (saved == ECONNREFUSED)
+        {
+          // SAFETY: path is null-terminated.
+          AU_UNSAFE ::unlink(path.c_str());
+        }
+        else if (saved != ENOENT)
+          return fail(Error::os(saved).ctx("ipc::ChannelListener::bind"));
       }
     }
 
@@ -536,14 +582,16 @@ namespace au::ipc
       return fail(Error::os(errno).ctx("ipc::ChannelListener::bind"));
     set_nosigpipe(fd);
 
-    if (::bind(fd, reinterpret_cast<const sockaddr *>(&addr), sizeof(addr)) != 0 ||
-        ::listen(fd, 8) != 0)
+    // SAFETY: the socket API takes every address as a sockaddr and goes by the family and size.
+    AU_UNSAFE const int bound = ::bind(fd, reinterpret_cast<const sockaddr *>(&addr), sizeof(addr));
+    if (bound != 0 || ::listen(fd, 8) != 0)
     {
       const int saved = errno;
       ::close(fd);
       return fail(Error::os(saved).ctx("ipc::ChannelListener::bind"));
     }
-    ::chmod(path.c_str(), 0600); // owner-only (contract)
+    // SAFETY: path is null-terminated.
+    AU_UNSAFE ::chmod(path.c_str(), 0600); // owner-only (contract)
 
     ChannelListener listener;
     listener.m_native = fd;
@@ -558,7 +606,8 @@ namespace au::ipc
 
     for (;;)
     {
-      const int fd = ::accept(static_cast<int>(m_native), nullptr, nullptr);
+      // SAFETY: null address and length ask for no address.
+      AU_UNSAFE const int fd = ::accept(static_cast<int>(m_native), nullptr, nullptr);
       if (fd >= 0)
       {
         set_nosigpipe(fd);
@@ -573,14 +622,18 @@ namespace au::ipc
   AUXID_API auto ChannelListener::close() -> void
   {
     if (m_native != K_INVALID_IPC_HANDLE && !m_name.empty())
-      ::unlink(m_name.c_str());
+    {
+      // SAFETY: m_name is null-terminated.
+      AU_UNSAFE ::unlink(m_name.c_str());
+    }
     close_fd(m_native);
   }
 
   AUXID_API auto InstanceLock::acquire(StringView app_key) -> Result<InstanceLock>
   {
     const String path = runtime_path(app_key, ".lock");
-    const int fd = ::open(path.c_str(), O_CREAT | O_RDWR | O_CLOEXEC, 0600);
+    // SAFETY: path is null-terminated, and O_CREAT comes with the mode it requires.
+    AU_UNSAFE const int fd = ::open(path.c_str(), O_CREAT | O_RDWR | O_CLOEXEC, 0600);
     if (fd < 0)
       return fail(Error::os(errno).ctx("ipc::InstanceLock::acquire"));
 

@@ -86,17 +86,20 @@ export namespace au::compiler
 
   inline auto memcmp(const void *lhs, const void *rhs, std::size_t n) noexcept -> int
   {
-    return std::memcmp(lhs, rhs, n);
+    // SAFETY: the caller passes n readable bytes on both sides.
+    AU_UNSAFE return std::memcmp(lhs, rhs, n);
   }
 
   inline auto strlen(const char *s) noexcept -> std::size_t
   {
-    return std::strlen(s);
+    // SAFETY: the caller passes a null-terminated string.
+    AU_UNSAFE return std::strlen(s);
   }
 
   inline auto memchr(const void *p, int c, std::size_t n) noexcept -> const void *
   {
-    return std::memchr(p, c, n);
+    // SAFETY: the caller passes n readable bytes.
+    AU_UNSAFE return std::memchr(p, c, n);
   }
 } // namespace au::compiler
 
@@ -109,21 +112,24 @@ export namespace au
 
   template<class T, class... Args> constexpr auto construct_at(T *p, Args &&...args) -> T *
   {
-    return ::new (static_cast<void *>(p)) T(static_cast<Args &&>(args)...);
+    // SAFETY: the caller passes storage for a T that holds no live object, as for std::construct_at.
+    AU_UNSAFE return ::new (static_cast<void *>(p)) T(static_cast<Args &&>(args)...);
   }
 
   template<class T> constexpr auto destroy_at(T *p) -> void
   {
     if constexpr (std::is_array_v<T>)
     {
-      for (auto &elem : *p)
+      // SAFETY: the caller passes a live array.
+      AU_UNSAFE for (auto &elem : *p)
         au::destroy_at(compiler::addressof(elem));
     }
     else
     {
       if constexpr (!std::is_trivially_destructible_v<T>)
       {
-        p->~T();
+        // SAFETY: the caller passes a live T and does not use it again.
+        AU_UNSAFE p->~T();
       }
     }
   }
@@ -177,58 +183,65 @@ export namespace au
     bool m_is_ok;
 
 public:
-    constexpr ResultT(const T &val)
+    AU_IMPLICIT constexpr ResultT(const T &val)
       requires std::is_copy_constructible_v<T>
         : m_val(val), m_is_ok(true)
     {
     }
 
-    constexpr ResultT(T &&val)
+    AU_IMPLICIT constexpr ResultT(T &&val)
       requires std::is_move_constructible_v<T>
         : m_val(std::move(val)), m_is_ok(true)
     {
     }
 
     template<typename ErrT>
-    constexpr ResultT(Unexpected<ErrT> &&failure) : m_err(std::move(failure.val)), m_is_ok(false)
+    AU_IMPLICIT constexpr ResultT(Unexpected<ErrT> &&failure) : m_err(std::move(failure.val)), m_is_ok(false)
     {
     }
 
 #if defined(__cpp_lib_expected)
-    constexpr ResultT(const std::expected<T, E> &exp) : m_is_ok(exp.has_value())
+    AU_IMPLICIT constexpr ResultT(const std::expected<T, E> &exp) : m_is_ok(exp.has_value())
     {
-      if (m_is_ok)
+      // SAFETY: construction sets m_is_ok and builds the member it names.
+      AU_UNSAFE if (m_is_ok)
         au::construct_at(&m_val, *exp);
       else
         au::construct_at(&m_err, exp.error());
     }
 
-    constexpr ResultT(std::expected<T, E> &&exp) : m_is_ok(exp.has_value())
+    AU_IMPLICIT constexpr ResultT(std::expected<T, E> &&exp) : m_is_ok(exp.has_value())
     {
-      if (m_is_ok)
+      // SAFETY: construction sets m_is_ok and builds the member it names.
+      AU_UNSAFE if (m_is_ok)
         au::construct_at(&m_val, std::move(*exp));
       else
         au::construct_at(&m_err, std::move(exp.error()));
     }
 
-    [[nodiscard]] constexpr operator std::expected<T, E>() const &
+    AU_IMPLICIT [[nodiscard]] constexpr operator std::expected<T, E>() const &
     {
-      if (m_is_ok)
+      // SAFETY: m_is_ok says which union member is alive.
+      AU_UNSAFE if (m_is_ok)
         return std::expected<T, E>{m_val};
-      return std::expected<T, E>{std::unexpect, m_err};
+      // SAFETY: m_is_ok says which union member is alive.
+      AU_UNSAFE return std::expected<T, E>{std::unexpect, m_err};
     }
 
-    [[nodiscard]] constexpr operator std::expected<T, E>() &&
+    AU_IMPLICIT [[nodiscard]] constexpr operator std::expected<T, E>() &&
     {
-      if (m_is_ok)
+      // SAFETY: m_is_ok says which union member is alive.
+      AU_UNSAFE if (m_is_ok)
         return std::expected<T, E>{std::move(m_val)};
-      return std::expected<T, E>{std::unexpect, std::move(m_err)};
+      // SAFETY: m_is_ok says which union member is alive.
+      AU_UNSAFE return std::expected<T, E>{std::unexpect, std::move(m_err)};
     }
 #endif
 
     constexpr ~ResultT()
     {
-      if (m_is_ok)
+      // SAFETY: m_is_ok says which union member is alive.
+      AU_UNSAFE if (m_is_ok)
       {
         if constexpr (!std::is_trivially_destructible_v<T>)
           au::destroy_at(&m_val);
@@ -244,7 +257,8 @@ public:
       requires(std::is_copy_constructible_v<T> && std::is_copy_constructible_v<E>)
         : m_is_ok(other.m_is_ok)
     {
-      if (m_is_ok)
+      // SAFETY: m_is_ok is copied from other, so both name the same member.
+      AU_UNSAFE if (m_is_ok)
         au::construct_at(&m_val, other.m_val);
       else
         au::construct_at(&m_err, other.m_err);
@@ -254,7 +268,8 @@ public:
       requires(std::is_move_constructible_v<T> && std::is_move_constructible_v<E>)
         : m_is_ok(other.m_is_ok)
     {
-      if (m_is_ok)
+      // SAFETY: m_is_ok is copied from other, so both name the same member.
+      AU_UNSAFE if (m_is_ok)
         au::construct_at(&m_val, std::move(other.m_val));
       else
         au::construct_at(&m_err, std::move(other.m_err));
@@ -266,7 +281,9 @@ public:
       if (this == &other)
         return *this;
 
-      if (m_is_ok && other.m_is_ok)
+      // SAFETY: each m_is_ok says which member is alive. The last branch ends one and starts the other before
+      // m_is_ok changes.
+      AU_UNSAFE if (m_is_ok && other.m_is_ok)
       {
         m_val = other.m_val;
       }
@@ -299,7 +316,9 @@ public:
       if (this == &other)
         return *this;
 
-      if (m_is_ok && other.m_is_ok)
+      // SAFETY: each m_is_ok says which member is alive. The last branch ends one and starts the other before
+      // m_is_ok changes.
+      AU_UNSAFE if (m_is_ok && other.m_is_ok)
       {
         m_val = std::move(other.m_val);
       }
@@ -330,28 +349,32 @@ public:
     {
       if (!m_is_ok)
         au::panic("Called unwrap() on an Error Result", loc);
-      return m_val;
+      // SAFETY: m_is_ok says which union member is alive.
+      AU_UNSAFE return m_val;
     }
 
     constexpr auto unwrap(std::source_location loc = std::source_location::current()) const & -> const T &
     {
       if (!m_is_ok)
         au::panic("Called unwrap() on an Error Result", loc);
-      return m_val;
+      // SAFETY: m_is_ok says which union member is alive.
+      AU_UNSAFE return m_val;
     }
 
     constexpr auto unwrap(std::source_location loc = std::source_location::current()) && -> T
     {
       if (!m_is_ok)
         au::panic("Called unwrap() on an Error Result", loc);
-      return std::move(m_val);
+      // SAFETY: m_is_ok says which union member is alive.
+      AU_UNSAFE return std::move(m_val);
     }
 
     constexpr auto unwrap_err(std::source_location loc = std::source_location::current()) const & -> const E &
     {
       if (m_is_ok)
         au::panic("Called unwrap_err() on an Ok Result", loc);
-      return m_err;
+      // SAFETY: m_is_ok says which union member is alive.
+      AU_UNSAFE return m_err;
     }
 
     // Non-const overload so std::move(res.unwrap_err()) is a real move: the
@@ -361,7 +384,8 @@ public:
     {
       if (m_is_ok)
         au::panic("Called unwrap_err() on an Ok Result", loc);
-      return m_err;
+      // SAFETY: m_is_ok says which union member is alive.
+      AU_UNSAFE return m_err;
     }
 
     constexpr auto err(std::source_location loc = std::source_location::current()) const & -> const E &
@@ -429,13 +453,14 @@ public:
     }
 
     template<typename ErrT>
-    constexpr ResultT(Unexpected<ErrT> &&failure) : m_err(std::move(failure.val)), m_is_ok(false)
+    AU_IMPLICIT constexpr ResultT(Unexpected<ErrT> &&failure) : m_err(std::move(failure.val)), m_is_ok(false)
     {
     }
 
     constexpr ResultT(ResultT &&other) noexcept : m_is_ok(other.m_is_ok)
     {
-      if (!m_is_ok)
+      // SAFETY: m_is_ok is copied from other, so both name the same member.
+      AU_UNSAFE if (!m_is_ok)
         au::construct_at(&m_err, std::move(other.m_err));
     }
 
@@ -443,7 +468,8 @@ public:
       requires std::is_copy_constructible_v<E>
         : m_is_ok(other.m_is_ok)
     {
-      if (!m_is_ok)
+      // SAFETY: m_is_ok is copied from other, so both name the same member.
+      AU_UNSAFE if (!m_is_ok)
         au::construct_at(&m_err, other.m_err);
     }
 
@@ -453,7 +479,8 @@ public:
       if (this == &other)
         return *this;
 
-      if (!m_is_ok && !other.m_is_ok)
+      // SAFETY: each m_is_ok says whether m_err is alive; m_is_ok changes after m_err is built or destroyed.
+      AU_UNSAFE if (!m_is_ok && !other.m_is_ok)
       {
         m_err = other.m_err;
       }
@@ -477,7 +504,8 @@ public:
       if (this == &other)
         return *this;
 
-      if (!m_is_ok && !other.m_is_ok)
+      // SAFETY: each m_is_ok says whether m_err is alive; m_is_ok changes after m_err is built or destroyed.
+      AU_UNSAFE if (!m_is_ok && !other.m_is_ok)
       {
         m_err = std::move(other.m_err);
       }
@@ -496,36 +524,41 @@ public:
     }
 
 #if defined(__cpp_lib_expected)
-    constexpr ResultT(const std::expected<void, E> &exp) : m_is_ok(exp.has_value())
+    AU_IMPLICIT constexpr ResultT(const std::expected<void, E> &exp) : m_is_ok(exp.has_value())
     {
-      if (!m_is_ok)
+      // SAFETY: construction sets m_is_ok and builds m_err if it is false.
+      AU_UNSAFE if (!m_is_ok)
         au::construct_at(&m_err, exp.error());
     }
 
-    constexpr ResultT(std::expected<void, E> &&exp) : m_is_ok(exp.has_value())
+    AU_IMPLICIT constexpr ResultT(std::expected<void, E> &&exp) : m_is_ok(exp.has_value())
     {
-      if (!m_is_ok)
+      // SAFETY: construction sets m_is_ok and builds m_err if it is false.
+      AU_UNSAFE if (!m_is_ok)
         au::construct_at(&m_err, std::move(exp.error()));
     }
 
-    [[nodiscard]] constexpr operator std::expected<void, E>() const &
+    AU_IMPLICIT [[nodiscard]] constexpr operator std::expected<void, E>() const &
     {
       if (m_is_ok)
         return std::expected<void, E>{};
-      return std::expected<void, E>{std::unexpect, m_err};
+      // SAFETY: m_is_ok says which union member is alive.
+      AU_UNSAFE return std::expected<void, E>{std::unexpect, m_err};
     }
 
-    [[nodiscard]] constexpr operator std::expected<void, E>() &&
+    AU_IMPLICIT [[nodiscard]] constexpr operator std::expected<void, E>() &&
     {
       if (m_is_ok)
         return std::expected<void, E>{};
-      return std::expected<void, E>{std::unexpect, std::move(m_err)};
+      // SAFETY: m_is_ok says which union member is alive.
+      AU_UNSAFE return std::expected<void, E>{std::unexpect, std::move(m_err)};
     }
 #endif
 
     constexpr ~ResultT()
     {
-      if (!m_is_ok)
+      // SAFETY: m_is_ok says whether m_err is alive.
+      AU_UNSAFE if (!m_is_ok)
       {
         if constexpr (!std::is_trivially_destructible_v<E>)
           au::destroy_at(&m_err);
@@ -557,7 +590,8 @@ public:
     {
       if (m_is_ok)
         au::panic("Called unwrap_err() on an Ok Result", loc);
-      return m_err;
+      // SAFETY: m_is_ok says which union member is alive.
+      AU_UNSAFE return m_err;
     }
 
     // See the primary template: required for AU_TRY to move rather than copy.
@@ -565,7 +599,8 @@ public:
     {
       if (m_is_ok)
         au::panic("Called unwrap_err() on an Ok Result", loc);
-      return m_err;
+      // SAFETY: m_is_ok says which union member is alive.
+      AU_UNSAFE return m_err;
     }
 
     constexpr auto err(std::source_location loc = std::source_location::current()) const & -> const E &

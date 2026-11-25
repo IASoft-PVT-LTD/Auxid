@@ -96,7 +96,8 @@ namespace au
 
     inline auto find(const char *p, usize n, char c) -> const char *
     {
-      return static_cast<const char *>(compiler::memchr(p, c, n));
+      // SAFETY: memchr returns null or a pointer into p, which points at chars.
+      AU_UNSAFE return static_cast<const char *>(compiler::memchr(p, c, n));
     }
 
     inline auto search_substring(const char *haystack, usize h_len, const char *needle, usize n_len, usize pos) -> usize
@@ -116,7 +117,8 @@ namespace au
 
       for (usize i = pos; i <= last_possible; ++i)
       {
-        if (haystack[i] == needle[0])
+        // SAFETY: i <= h_len - n_len and n_len > 0, so every read stays inside the two strings.
+        AU_UNSAFE if (haystack[i] == needle[0])
         {
           if (compare(haystack + i + 1, needle + 1, n_len - 1) == 0)
           {
@@ -145,15 +147,15 @@ public:
     {
     }
 
-    constexpr StringView(const char *s) : m_ptr(s), m_len(s ? internal::length(s) : 0)
+    AU_IMPLICIT constexpr StringView(const char *s) : m_ptr(s), m_len(s ? internal::length(s) : 0)
     {
     }
 
-    constexpr StringView(containers::Span<const char> span) : m_ptr(span.data()), m_len(span.size())
+    AU_IMPLICIT constexpr StringView(containers::Span<const char> span) : m_ptr(span.data()), m_len(span.size())
     {
     }
 
-    constexpr StringView(std::string_view sv) : m_ptr(sv.data()), m_len(sv.size())
+    AU_IMPLICIT constexpr StringView(std::string_view sv) : m_ptr(sv.data()), m_len(sv.size())
     {
     }
 
@@ -167,7 +169,9 @@ public:
 
     constexpr auto operator[](usize i) const -> char
     {
-      return m_ptr[i];
+      // SAFETY: m_ptr points at m_len readable chars (the caller's promise at construction); the caller keeps
+      // i below it.
+      AU_UNSAFE return m_ptr[i];
     }
 
     [[nodiscard]] constexpr auto data() const -> const char *
@@ -192,7 +196,8 @@ public:
 
     [[nodiscard]] constexpr auto end() const noexcept -> iterator
     {
-      return m_ptr + m_len;
+      // SAFETY: m_ptr points at m_len readable chars (the caller's promise at construction).
+      AU_UNSAFE return m_ptr + m_len;
     }
 
     [[nodiscard]] constexpr auto cbegin() const noexcept -> const_iterator
@@ -227,15 +232,19 @@ public:
 
     [[nodiscard]] constexpr auto back() const -> char
     {
-      return m_ptr[m_len - 1];
+      // SAFETY: m_ptr points at m_len readable chars (the caller's promise at construction); the caller checks that
+      // the view is not empty.
+      AU_UNSAFE return m_ptr[m_len - 1];
     }
 
     [[nodiscard]] auto find(char c, usize pos = 0) const -> usize
     {
       if (pos >= m_len)
         return npos;
-      const char *res = internal::find(m_ptr + pos, m_len - pos, c);
-      return res ? static_cast<usize>(res - m_ptr) : npos;
+      // SAFETY: pos < m_len was checked above.
+      AU_UNSAFE const char *res = internal::find(m_ptr + pos, m_len - pos, c);
+      // SAFETY: res is null or points into the view.
+      AU_UNSAFE return res ? static_cast<usize>(res - m_ptr) : npos;
     }
 
     [[nodiscard]] auto find(StringView v, usize pos = 0) const -> usize
@@ -255,7 +264,7 @@ public:
       return internal::compare(m_ptr, other.m_ptr, m_len) == 0;
     }
 
-    constexpr operator containers::Span<const char>() const
+    AU_IMPLICIT constexpr operator containers::Span<const char>() const
     {
       return containers::Span<const char>(m_ptr, m_len);
     }
@@ -265,7 +274,8 @@ public:
       if (pos >= m_len)
         return StringView();
       usize rcount = (count > m_len - pos) ? (m_len - pos) : count;
-      return StringView(m_ptr + pos, rcount);
+      // SAFETY: pos < m_len was checked above, and rcount stops at the end.
+      AU_UNSAFE return StringView(m_ptr + pos, rcount);
     }
 
     [[nodiscard]] auto starts_with(StringView prefix) const -> bool
@@ -279,7 +289,8 @@ public:
     {
       if (suffix.size() > m_len)
         return false;
-      return internal::compare(m_ptr + m_len - suffix.size(), suffix.data(), suffix.size()) == 0;
+      // SAFETY: suffix.size() <= m_len was checked above.
+      AU_UNSAFE return internal::compare(m_ptr + m_len - suffix.size(), suffix.data(), suffix.size()) == 0;
     }
   };
 
@@ -354,63 +365,101 @@ private:
 
     [[nodiscard]] auto is_short() const -> bool
     {
-      return !(m_storage.s.size_shifted & 1);
+      // SAFETY: the first byte overlaps the low byte of cap_flagged (little-endian), whose low bit is set only in the
+      // long layout. Clang, GCC and MSVC define reading it through the other member.
+      AU_UNSAFE return !(m_storage.s.size_shifted & 1);
     }
 
     [[nodiscard]] auto get_short_size() const -> usize
     {
-      return m_storage.s.size_shifted >> 1;
+      // SAFETY: only called in the short layout.
+      AU_UNSAFE return static_cast<usize>(m_storage.s.size_shifted >> 1);
     }
 
     auto set_short_size(u8 size) -> void
     {
-      m_storage.s.size_shifted = static_cast<u8>(size << 1);
+      // SAFETY: writing the byte makes the short layout the live one.
+      AU_UNSAFE m_storage.s.size_shifted = static_cast<u8>(size << 1);
     }
 
     [[nodiscard]] auto get_data() -> char *
     {
-      return is_short() ? m_storage.s.data : m_storage.l.ptr;
+      // SAFETY: is_short() says which layout is alive.
+      AU_UNSAFE return is_short() ? m_storage.s.data : m_storage.l.ptr;
     }
 
     [[nodiscard]] auto get_data() const -> const char *
     {
-      return is_short() ? m_storage.s.data : m_storage.l.ptr;
+      // SAFETY: is_short() says which layout is alive.
+      AU_UNSAFE return is_short() ? m_storage.s.data : m_storage.l.ptr;
     }
 
     [[nodiscard]] auto get_size() const -> usize
     {
-      return is_short() ? get_short_size() : m_storage.l.size;
+      // SAFETY: is_short() says which layout is alive.
+      AU_UNSAFE return is_short() ? get_short_size() : m_storage.l.size;
     }
 
     [[nodiscard]] auto get_capacity() const -> usize
     {
-      return is_short() ? SSO_CAPACITY : (m_storage.l.cap_flagged >> 1);
+      // SAFETY: is_short() says which layout is alive.
+      AU_UNSAFE return is_short() ? SSO_CAPACITY : (m_storage.l.cap_flagged >> 1);
     }
 
     auto set_long_capacity(usize cap) -> void
     {
-      m_storage.l.cap_flagged = (cap << 1) | 1;
+      // SAFETY: writing the flag makes the long layout the live one; the callers also set its other members.
+      AU_UNSAFE m_storage.l.cap_flagged = (cap << 1) | 1;
+    }
+
+    // Reserves, and returns `from` moved along with the buffer if it points into this string.
+    [[nodiscard]] auto reserve_keeping(usize new_cap, const char *from) -> const char *
+    {
+      const char *first = get_data();
+      // SAFETY: the buffer holds get_size() chars and a terminator. std::less orders unrelated pointers too.
+      AU_UNSAFE const bool inside =
+          !std::less<const char *>{}(from, first) && !std::less<const char *>{}(first + get_size(), from);
+      if (!inside)
+      {
+        reserve(new_cap);
+        return from;
+      }
+      // SAFETY: both point into the buffer.
+      AU_UNSAFE const auto offset = static_cast<usize>(from - first);
+      reserve(new_cap);
+      // SAFETY: reserve kept the contents and their terminator, so the same char is at the same offset.
+      AU_UNSAFE return get_data() + offset;
     }
 
 public:
     BasicString()
       requires std::default_initializable<A>
     {
-      m_storage.s.size_shifted = 0;
-      m_storage.s.data[0] = '\0';
+      // SAFETY: starts the short layout, empty.
+      AU_UNSAFE
+      {
+        m_storage.s.size_shifted = 0;
+        m_storage.s.data[0] = '\0';
+      }
     }
 
     explicit BasicString(A alloc) : m_allocator(std::move(alloc))
     {
-      m_storage.s.size_shifted = 0;
-      m_storage.s.data[0] = '\0';
+      // SAFETY: starts the short layout, empty.
+      AU_UNSAFE
+      {
+        m_storage.s.size_shifted = 0;
+        m_storage.s.data[0] = '\0';
+      }
     }
 
-    BasicString(const char *str)
+    AU_IMPLICIT BasicString(const char *str)
       requires std::default_initializable<A>
     {
-      m_storage.s.size_shifted = 0;
-      if (str)
+      // SAFETY: starts the short layout, empty.
+      AU_UNSAFE m_storage.s.size_shifted = 0;
+      // SAFETY: as above.
+      AU_UNSAFE if (str)
         assign(StringView(str));
       else
         m_storage.s.data[0] = '\0';
@@ -419,7 +468,8 @@ public:
     BasicString(const char *str, usize len)
       requires std::default_initializable<A>
     {
-      m_storage.s.size_shifted = 0;
+      // SAFETY: starts the short layout, empty.
+      AU_UNSAFE m_storage.s.size_shifted = 0;
 
       if (str != nullptr && len > 0)
       {
@@ -427,29 +477,36 @@ public:
       }
       else
       {
-        m_storage.s.data[0] = '\0';
+        // SAFETY: as above.
+        AU_UNSAFE m_storage.s.data[0] = '\0';
       }
     }
 
-    BasicString(StringView sv)
+    AU_IMPLICIT BasicString(StringView sv)
       requires std::default_initializable<A>
     {
-      m_storage.s.size_shifted = 0;
+      // SAFETY: starts the short layout, empty.
+      AU_UNSAFE m_storage.s.size_shifted = 0;
       assign(sv);
     }
 
     BasicString(StringView sv, A alloc) : m_allocator(std::move(alloc))
     {
-      m_storage.s.size_shifted = 0;
+      // SAFETY: starts the short layout, empty.
+      AU_UNSAFE m_storage.s.size_shifted = 0;
       assign(sv);
     }
 
     BasicString(BasicString &&other) noexcept : m_allocator(static_cast<A &&>(other.m_allocator))
     {
-      std::memcpy(&m_storage, &other.m_storage, sizeof(m_storage));
+      // SAFETY: both layouts are trivially copyable. other is left empty and short, so one string owns the buffer.
+      AU_UNSAFE
+      {
+        std::memcpy(&m_storage, &other.m_storage, sizeof(m_storage));
 
-      other.m_storage.s.size_shifted = 0;
-      other.m_storage.s.data[0] = '\0';
+        other.m_storage.s.size_shifted = 0;
+        other.m_storage.s.data[0] = '\0';
+      }
     }
 
     auto operator=(BasicString &&other) noexcept -> BasicString &
@@ -459,16 +516,22 @@ public:
         destroy();
         m_allocator = static_cast<A &&>(other.m_allocator);
 
-        std::memcpy(&m_storage, &other.m_storage, sizeof(m_storage));
-        other.m_storage.s.size_shifted = 0;
-        other.m_storage.s.data[0] = '\0';
+        // SAFETY: both layouts are trivially copyable, and the old buffer was released above. other is left empty
+        // and short, so one string owns the buffer.
+        AU_UNSAFE
+        {
+          std::memcpy(&m_storage, &other.m_storage, sizeof(m_storage));
+          other.m_storage.s.size_shifted = 0;
+          other.m_storage.s.data[0] = '\0';
+        }
       }
       return *this;
     }
 
     BasicString(const BasicString &other) : m_allocator(other.m_allocator)
     {
-      m_storage.s.size_shifted = 0;
+      // SAFETY: starts the short layout, empty.
+      AU_UNSAFE m_storage.s.size_shifted = 0;
       assign(StringView(other.data(), other.size()));
     }
 
@@ -509,12 +572,17 @@ public:
 
     auto destroy() -> void
     {
-      if (!is_short())
+      // SAFETY: the long layout is alive, and the buffer came from m_allocator with this size.
+      AU_UNSAFE if (!is_short())
       {
         m_allocator.free(m_storage.l.ptr, get_capacity() + 1, 1);
       }
-      m_storage.s.size_shifted = 0;
-      m_storage.s.data[0] = '\0';
+      // SAFETY: starts the short layout, empty.
+      AU_UNSAFE
+      {
+        m_storage.s.size_shifted = 0;
+        m_storage.s.data[0] = '\0';
+      }
     }
 
     auto reserve(usize new_cap) -> void
@@ -525,7 +593,9 @@ public:
 
       const usize new_alloc_size = new_cap + 1;
 
-      if (is_short())
+      // SAFETY: is_short() says which layout is alive. The new buffer is larger than the old one, so the contents
+      // and their terminator fit; set_long_capacity comes after the other members of the long layout are set.
+      AU_UNSAFE if (is_short())
       {
         char *new_mem = (char *) m_allocator.alloc(new_alloc_size, 1);
 
@@ -570,22 +640,25 @@ public:
     auto assign(StringView sv) -> void
     {
       usize len = sv.size();
+      const char *from = sv.data();
       if (len > get_capacity())
       {
-        reserve(len);
+        from = reserve_keeping(len, from);
       }
 
-      if (is_short())
+      // SAFETY: the capacity is at least len, plus a terminator. sv may be a part of this string, so the
+      // bytes may overlap.
+      AU_UNSAFE if (is_short())
       {
         set_short_size(static_cast<u8>(len));
         if (len > 0)
-          std::memcpy(m_storage.s.data, sv.data(), len);
+          std::memmove(m_storage.s.data, from, len);
         m_storage.s.data[len] = '\0';
       }
       else
       {
         if (len > 0)
-          std::memcpy(m_storage.l.ptr, sv.data(), len);
+          std::memmove(m_storage.l.ptr, from, len);
         m_storage.l.ptr[len] = '\0';
         m_storage.l.size = len;
       }
@@ -598,19 +671,23 @@ public:
 
       usize cur_len = size();
       usize req_len = cur_len + sv.size();
+      const char *from = sv.data();
 
       if (req_len > get_capacity())
       {
         usize next_cap = get_capacity() * 2;
         if (next_cap < req_len)
           next_cap = req_len;
-        reserve(next_cap);
+        from = reserve_keeping(next_cap, from);
       }
 
-      char *dest = get_data() + cur_len;
-      std::memcpy(dest, sv.data(), sv.size());
+      // SAFETY: the capacity is at least req_len, plus a terminator.
+      AU_UNSAFE char *dest = get_data() + cur_len;
+      // SAFETY: as above. sv may be a part of this string that ends with the terminator, so the bytes may overlap.
+      AU_UNSAFE std::memmove(dest, from, sv.size());
 
-      if (is_short())
+      // SAFETY: as above.
+      AU_UNSAFE if (is_short())
       {
         set_short_size(static_cast<u8>(req_len));
         m_storage.s.data[req_len] = '\0';
@@ -668,7 +745,8 @@ public:
       {
         const usize new_size = current_size - 1;
 
-        if (is_short())
+        // SAFETY: is_short() says which layout is alive, and new_size is below the size.
+        AU_UNSAFE if (is_short())
         {
           m_storage.s.data[new_size] = '\0';
           set_short_size(static_cast<u8>(new_size));
@@ -689,7 +767,8 @@ public:
         reserve(cur_len == 0 ? 8 : get_capacity() * 2);
       }
 
-      if (is_short())
+      // SAFETY: is_short() says which layout is alive; the capacity is above cur_len, plus a terminator.
+      AU_UNSAFE if (is_short())
       {
         m_storage.s.data[cur_len] = c;
         m_storage.s.data[cur_len + 1] = '\0';
@@ -716,7 +795,8 @@ public:
 
     auto end() -> char *
     {
-      return get_data() + get_size();
+      // SAFETY: the buffer holds get_size() chars and a terminator.
+      AU_UNSAFE return get_data() + get_size();
     }
 
     [[nodiscard]] auto begin() const -> const char *
@@ -726,7 +806,8 @@ public:
 
     [[nodiscard]] auto end() const -> const char *
     {
-      return get_data() + get_size();
+      // SAFETY: the buffer holds get_size() chars and a terminator.
+      AU_UNSAFE return get_data() + get_size();
     }
 
     [[nodiscard]] auto cbegin() const noexcept -> const_iterator
@@ -775,7 +856,8 @@ public:
       if (get_size() == 0)
         panic("Called back() on empty String");
 #endif
-      return get_data()[get_size() - 1];
+      // SAFETY: the caller checks that the string is not empty; debug builds panic.
+      AU_UNSAFE return get_data()[get_size() - 1];
     }
 
     [[nodiscard]] auto back() const -> const char &
@@ -784,20 +866,21 @@ public:
       if (get_size() == 0)
         panic("Called back() on empty String");
 #endif
-      return get_data()[get_size() - 1];
+      // SAFETY: the caller checks that the string is not empty; debug builds panic.
+      AU_UNSAFE return get_data()[get_size() - 1];
     }
 
-    operator Span<char>()
+    AU_IMPLICIT operator Span<char>()
     {
       return Span<char>(get_data(), get_size());
     }
 
-    operator Span<const char>() const
+    AU_IMPLICIT operator Span<const char>() const
     {
       return Span<const char>(get_data(), get_size());
     }
 
-    operator StringView() const
+    AU_IMPLICIT operator StringView() const
     {
       return StringView(get_data(), get_size());
     }
@@ -805,7 +888,8 @@ public:
     [[nodiscard]] auto as_bytes() const -> Span<const u8>
     {
       auto bytes = std::as_bytes(Span<const char>(get_data(), get_size()));
-      return Span<const u8>(reinterpret_cast<const u8 *>(bytes.data()), bytes.size());
+      // SAFETY: u8 is unsigned char, which may read any object's bytes.
+      AU_UNSAFE return Span<const u8>(reinterpret_cast<const u8 *>(bytes.data()), bytes.size());
     }
 
     [[nodiscard]] auto find(char c, usize pos = 0) const -> usize
@@ -831,12 +915,14 @@ public:
 public:
     auto clear() -> void
     {
-      if (is_short())
+      // SAFETY: is_short() says which layout is alive.
+      AU_UNSAFE if (is_short())
         set_short_size(0);
       else
         m_storage.l.size = 0;
 
-      get_data()[0] = '\0';
+      // SAFETY: the buffer always holds at least a terminator.
+      AU_UNSAFE get_data()[0] = '\0';
     }
 
     [[nodiscard]] auto substr(usize pos, usize count = npos) const -> StringView
@@ -874,7 +960,8 @@ private:
 
       auto operator=(char c) -> AppendIterator &
       {
-        target->append(StringView(&c, 1));
+        // SAFETY: the string outlives its iterators.
+        AU_UNSAFE target->append(StringView(&c, 1));
         return *this;
       }
     };
@@ -1034,46 +1121,50 @@ public:
     {
     }
 
-    constexpr Option(NullOptType) noexcept : m_dummy(0), m_has_value(false)
+    AU_IMPLICIT constexpr Option(NullOptType) noexcept : m_dummy(0), m_has_value(false)
     {
     }
 
-    constexpr Option(const T &val) : m_val(val), m_has_value(true)
+    AU_IMPLICIT constexpr Option(const T &val) : m_val(val), m_has_value(true)
     {
     }
 
-    constexpr Option(T &&val) : m_val(std::move(val)), m_has_value(true)
+    AU_IMPLICIT constexpr Option(T &&val) : m_val(std::move(val)), m_has_value(true)
     {
     }
 
-    constexpr Option(const std::optional<T> &opt) : m_dummy(0), m_has_value(false)
+    AU_IMPLICIT constexpr Option(const std::optional<T> &opt) : m_dummy(0), m_has_value(false)
     {
       if (opt.has_value())
       {
-        au::construct_at(&m_val, *opt);
+        // SAFETY: no value is alive yet; m_has_value is set right after.
+        AU_UNSAFE au::construct_at(&m_val, *opt);
         m_has_value = true;
       }
     }
 
-    constexpr Option(std::optional<T> &&opt) : m_dummy(0), m_has_value(false)
+    AU_IMPLICIT constexpr Option(std::optional<T> &&opt) : m_dummy(0), m_has_value(false)
     {
       if (opt.has_value())
       {
-        au::construct_at(&m_val, std::move(*opt));
+        // SAFETY: no value is alive yet; m_has_value is set right after.
+        AU_UNSAFE au::construct_at(&m_val, std::move(*opt));
         m_has_value = true;
       }
     }
 
-    [[nodiscard]] constexpr operator std::optional<T>() const &
+    AU_IMPLICIT [[nodiscard]] constexpr operator std::optional<T>() const &
     {
-      if (m_has_value)
+      // SAFETY: m_has_value says whether m_val is alive.
+      AU_UNSAFE if (m_has_value)
         return std::optional<T>{m_val};
       return std::nullopt;
     }
 
-    [[nodiscard]] constexpr operator std::optional<T>() &&
+    AU_IMPLICIT [[nodiscard]] constexpr operator std::optional<T>() &&
     {
-      if (m_has_value)
+      // SAFETY: m_has_value says whether m_val is alive.
+      AU_UNSAFE if (m_has_value)
         return std::optional<T>{std::move(m_val)};
       return std::nullopt;
     }
@@ -1082,7 +1173,8 @@ public:
     {
       if (other.m_has_value)
       {
-        au::construct_at(&m_val, other.m_val);
+        // SAFETY: other holds a value, and none is alive here yet.
+        AU_UNSAFE au::construct_at(&m_val, other.m_val);
         m_has_value = true;
       }
       else
@@ -1095,7 +1187,8 @@ public:
     {
       if (other.m_has_value)
       {
-        au::construct_at(&m_val, std::move(other.m_val));
+        // SAFETY: other holds a value, and none is alive here yet.
+        AU_UNSAFE au::construct_at(&m_val, std::move(other.m_val));
         m_has_value = true;
       }
       else
@@ -1123,7 +1216,8 @@ public:
     {
       if (this != &other)
       {
-        if (other.m_has_value)
+        // SAFETY: each m_has_value says whether that value is alive.
+        AU_UNSAFE if (other.m_has_value)
         {
           if (m_has_value)
           {
@@ -1147,7 +1241,8 @@ public:
     {
       if (this != &other)
       {
-        if (other.m_has_value)
+        // SAFETY: each m_has_value says whether that value is alive.
+        AU_UNSAFE if (other.m_has_value)
         {
           if (m_has_value)
           {
@@ -1194,7 +1289,8 @@ public:
       if (!m_has_value)
         panic("Option::operator* on None");
 #endif
-      return m_val;
+      // SAFETY: the caller checks first; debug builds panic.
+      AU_UNSAFE return m_val;
     }
 
     constexpr auto operator*() const & -> const T &
@@ -1203,7 +1299,8 @@ public:
       if (!m_has_value)
         panic("Option::operator* on None");
 #endif
-      return m_val;
+      // SAFETY: the caller checks first; debug builds panic.
+      AU_UNSAFE return m_val;
     }
 
     constexpr auto operator->() -> T *
@@ -1212,7 +1309,8 @@ public:
       if (!m_has_value)
         panic("Option::operator-> on None");
 #endif
-      return &m_val;
+      // SAFETY: the caller checks first; debug builds panic.
+      AU_UNSAFE return &m_val;
     }
 
     constexpr auto operator->() const -> const T *
@@ -1221,52 +1319,60 @@ public:
       if (!m_has_value)
         panic("Option::operator-> on None");
 #endif
-      return &m_val;
+      // SAFETY: the caller checks first; debug builds panic.
+      AU_UNSAFE return &m_val;
     }
 
     constexpr auto unwrap(std::source_location loc = std::source_location::current()) & -> T &
     {
       if (!m_has_value)
         panic("Called unwrap() on None Option", loc);
-      return m_val;
+      // SAFETY: checked above.
+      AU_UNSAFE return m_val;
     }
 
     constexpr auto unwrap(std::source_location loc = std::source_location::current()) const & -> const T &
     {
       if (!m_has_value)
         panic("Called unwrap() on None Option", loc);
-      return m_val;
+      // SAFETY: checked above.
+      AU_UNSAFE return m_val;
     }
 
     constexpr auto unwrap(std::source_location loc = std::source_location::current()) && -> T
     {
       if (!m_has_value)
         panic("Called unwrap() on None Option", loc);
-      return std::move(m_val);
+      // SAFETY: checked above.
+      AU_UNSAFE return std::move(m_val);
     }
 
     constexpr auto expect(const char *msg, std::source_location loc = std::source_location::current()) & -> T &
     {
       if (!m_has_value)
         panic(msg, loc);
-      return m_val;
+      // SAFETY: checked above.
+      AU_UNSAFE return m_val;
     }
 
     template<typename U> constexpr auto value_or(U &&def) const & -> T
     {
-      return m_has_value ? m_val : static_cast<T>(std::forward<U>(def));
+      // SAFETY: m_has_value says whether m_val is alive.
+      AU_UNSAFE return m_has_value ? m_val : static_cast<T>(std::forward<U>(def));
     }
 
     template<typename U> constexpr auto value_or(U &&def) && -> T
     {
-      return m_has_value ? std::move(m_val) : static_cast<T>(std::forward<U>(def));
+      // SAFETY: m_has_value says whether m_val is alive.
+      AU_UNSAFE return m_has_value ? std::move(m_val) : static_cast<T>(std::forward<U>(def));
     }
 
     template<typename F> constexpr auto map(F &&f) const & -> Option<std::invoke_result_t<F, const T &>>
     {
       if (m_has_value)
       {
-        return std::invoke(std::forward<F>(f), m_val);
+        // SAFETY: checked above.
+        AU_UNSAFE return std::invoke(std::forward<F>(f), m_val);
       }
       return nullopt;
     }
@@ -1278,7 +1384,8 @@ public:
       {
         if constexpr (!std::is_trivially_destructible_v<T>)
         {
-          au::destroy_at(&m_val);
+          // SAFETY: checked above; m_has_value is cleared below.
+          AU_UNSAFE au::destroy_at(&m_val);
         }
         m_has_value = false;
       }
@@ -1329,15 +1436,15 @@ public:
 
     // Implicit on purpose: keeps bare fail("...") and fail(String::format(...))
     // working as Generic errors (D-008 ruling: app-level ergonomics matter).
-    Error(String msg) : message(std::move(msg))
+    AU_IMPLICIT Error(String msg) : message(std::move(msg))
     {
     }
 
-    Error(StringView msg) : message(String(msg))
+    AU_IMPLICIT Error(StringView msg) : message(String(msg))
     {
     }
 
-    Error(const char *msg) : message(String(msg))
+    AU_IMPLICIT Error(const char *msg) : message(String(msg))
     {
     }
 
@@ -1444,10 +1551,13 @@ public:
     CompactVecBase(std::initializer_list<T> init)
       requires std::default_initializable<AllocatorT>
     {
+      if (init.size() > MAX_SIZE)
+        panic("CompactVecBase: more elements than the index type can count");
       reserve_exact(static_cast<size_type>(init.size()));
       if constexpr (std::is_trivially_copyable_v<T>)
       {
-        if (init.size() > 0)
+        // SAFETY: T is trivially copyable, and the buffer was reserved for init.size() elements.
+        AU_UNSAFE if (init.size() > 0)
           std::memcpy(m_data, init.begin(), init.size() * sizeof(T));
         m_size = static_cast<size_type>(init.size());
       }
@@ -1494,13 +1604,15 @@ public:
       reserve_exact(other.m_size);
       if constexpr (std::is_trivially_copyable_v<T>)
       {
-        if (other.m_size > 0)
+        // SAFETY: T is trivially copyable, and the buffer was reserved for other.m_size elements.
+        AU_UNSAFE if (other.m_size > 0)
           std::memcpy(m_data, other.m_data, other.m_size * sizeof(T));
         m_size = other.m_size;
       }
       else
       {
-        for (size_type i = 0; i < other.m_size; ++i)
+        // SAFETY: the buffer was reserved for other.m_size elements, and none is alive yet.
+        AU_UNSAFE for (size_type i = 0; i < other.m_size; ++i)
           au::construct_at(&m_data[i], other.m_data[i]);
         m_size = other.m_size;
       }
@@ -1522,13 +1634,15 @@ public:
         reserve_exact(other.m_size);
         if constexpr (std::is_trivially_copyable_v<T>)
         {
-          if (other.m_size > 0)
+          // SAFETY: T is trivially copyable, and the buffer was reserved for other.m_size elements.
+          AU_UNSAFE if (other.m_size > 0)
             std::memcpy(m_data, other.m_data, other.m_size * sizeof(T));
           m_size = other.m_size;
         }
         else
         {
-          for (size_type i = 0; i < other.m_size; ++i)
+          // SAFETY: the buffer was reserved for other.m_size elements, and none is alive yet.
+          AU_UNSAFE for (size_type i = 0; i < other.m_size; ++i)
             au::construct_at(&m_data[i], other.m_data[i]);
           m_size = other.m_size;
         }
@@ -1551,9 +1665,20 @@ public:
     template<typename... Args> auto emplace_back(Args &&...args) -> T &
     {
       if (m_size >= m_capacity)
+      {
+        // The arguments may refer to an element of this vector, so use them before the buffer moves.
+        T value(std::forward<Args>(args)...);
         grow();
-      au::construct_at(&m_data[m_size], std::forward<Args>(args)...);
-      return m_data[m_size++];
+        // SAFETY: m_size < m_capacity after grow().
+        AU_UNSAFE au::construct_at(&m_data[m_size], std::move(value));
+      }
+      else
+      {
+        // SAFETY: m_size < m_capacity.
+        AU_UNSAFE au::construct_at(&m_data[m_size], std::forward<Args>(args)...);
+      }
+      // SAFETY: the element just built.
+      AU_UNSAFE return m_data[m_size++];
     }
 
     auto push_back(const T &val) -> void
@@ -1582,7 +1707,8 @@ public:
       {
         --m_size;
         if constexpr (!std::is_trivially_destructible_v<T>)
-          au::destroy_at(&m_data[m_size]);
+          // SAFETY: m_size was just lowered, so this was the last live element.
+          AU_UNSAFE au::destroy_at(&m_data[m_size]);
       }
     }
 
@@ -1595,7 +1721,8 @@ public:
     {
       if constexpr (!std::is_trivially_destructible_v<T>)
       {
-        for (size_type i = 0; i < m_size; ++i)
+        // SAFETY: the first m_size elements are alive.
+        AU_UNSAFE for (size_type i = 0; i < m_size; ++i)
           au::destroy_at(&m_data[i]);
       }
       m_size = 0;
@@ -1628,12 +1755,14 @@ public:
       {
         if (new_size > m_capacity)
           reserve_at_least(new_size);
-        for (size_type i = m_size; i < new_size; ++i)
+        // SAFETY: the capacity is at least new_size, and these elements are not alive yet.
+        AU_UNSAFE for (size_type i = m_size; i < new_size; ++i)
           au::construct_at(&m_data[i]);
       }
       else if (new_size < m_size)
       {
-        if constexpr (!std::is_trivially_destructible_v<T>)
+        // SAFETY: the first m_size elements are alive.
+        AU_UNSAFE if constexpr (!std::is_trivially_destructible_v<T>)
           for (size_type i = new_size; i < m_size; ++i)
             au::destroy_at(&m_data[i]);
       }
@@ -1642,16 +1771,24 @@ public:
 
     auto resize(size_type new_size, const T &fill_val) -> void
     {
+      if (new_size > m_capacity)
+      {
+        // fill_val may be an element of this vector, so copy it before the buffer moves.
+        const T value(fill_val);
+        reserve_at_least(new_size);
+        resize(new_size, value);
+        return;
+      }
       if (new_size > m_size)
       {
-        if (new_size > m_capacity)
-          reserve_at_least(new_size);
-        for (size_type i = m_size; i < new_size; ++i)
+        // SAFETY: the capacity is at least new_size, and these elements are not alive yet.
+        AU_UNSAFE for (size_type i = m_size; i < new_size; ++i)
           au::construct_at(&m_data[i], fill_val);
       }
       else if (new_size < m_size)
       {
-        if constexpr (!std::is_trivially_destructible_v<T>)
+        // SAFETY: the first m_size elements are alive.
+        AU_UNSAFE if constexpr (!std::is_trivially_destructible_v<T>)
           for (size_type i = new_size; i < m_size; ++i)
             au::destroy_at(&m_data[i]);
       }
@@ -1689,7 +1826,8 @@ public:
       if (idx >= m_size)
         panic("CompactVecBase index out of bounds");
 #endif
-      return m_data[idx];
+      // SAFETY: the caller keeps idx below size(); debug builds panic.
+      AU_UNSAFE return m_data[idx];
     }
 
     auto operator[](size_type idx) const -> const T &
@@ -1698,7 +1836,8 @@ public:
       if (idx >= m_size)
         panic("CompactVecBase index out of bounds");
 #endif
-      return m_data[idx];
+      // SAFETY: the caller keeps idx below size(); debug builds panic.
+      AU_UNSAFE return m_data[idx];
     }
 
     auto begin() noexcept -> T *
@@ -1708,7 +1847,8 @@ public:
 
     auto end() noexcept -> T *
     {
-      return m_data + m_size;
+      // SAFETY: the first m_size elements are in the buffer; both are zero without one.
+      AU_UNSAFE return m_data + m_size;
     }
 
     auto begin() const noexcept -> const T *
@@ -1718,7 +1858,8 @@ public:
 
     auto end() const noexcept -> const T *
     {
-      return m_data + m_size;
+      // SAFETY: the first m_size elements are in the buffer; both are zero without one.
+      AU_UNSAFE return m_data + m_size;
     }
 
     auto cbegin() const noexcept -> const_iterator
@@ -1733,20 +1874,22 @@ public:
 
     auto back() -> T &
     {
-      return m_data[m_size - 1];
+      // SAFETY: the caller checks that the vector is not empty.
+      AU_UNSAFE return m_data[m_size - 1];
     }
 
     auto back() const -> const T &
     {
-      return m_data[m_size - 1];
+      // SAFETY: the caller checks that the vector is not empty.
+      AU_UNSAFE return m_data[m_size - 1];
     }
 
-    operator std::span<T>()
+    AU_IMPLICIT operator std::span<T>()
     {
       return std::span<T>(m_data, m_size);
     }
 
-    operator std::span<const T>() const
+    AU_IMPLICIT operator std::span<const T>() const
     {
       return std::span<const T>(m_data, m_size);
     }
@@ -1769,21 +1912,25 @@ private:
         if (m_data)
         {
           void *ptr = m_allocator.realloc(m_data, m_capacity * sizeof(T), new_cap * sizeof(T), alignof(T));
-          m_data = static_cast<T *>(ptr);
+          // SAFETY: realloc kept the contents, and T is trivially copyable.
+          AU_UNSAFE m_data = static_cast<T *>(ptr);
           m_capacity = new_cap;
           return;
         }
       }
-      T *new_data = static_cast<T *>(m_allocator.alloc(new_cap * sizeof(T), alignof(T)));
+      // SAFETY: the block has the size and alignment for new_cap elements.
+      AU_UNSAFE T *new_data = static_cast<T *>(m_allocator.alloc(new_cap * sizeof(T), alignof(T)));
       if (m_data)
       {
         if constexpr (std::is_trivially_copyable_v<T>)
         {
-          std::memcpy(new_data, m_data, m_size * sizeof(T));
+          // SAFETY: T is trivially copyable, and new_cap is larger than m_size.
+          AU_UNSAFE std::memcpy(new_data, m_data, m_size * sizeof(T));
         }
         else
         {
-          for (size_type i = 0; i < m_size; ++i)
+          // SAFETY: new_cap is larger than m_size; each element moves to a fresh slot and is destroyed once.
+          AU_UNSAFE for (size_type i = 0; i < m_size; ++i)
           {
             au::construct_at(&new_data[i], std::move(m_data[i]));
             au::destroy_at(&m_data[i]);
@@ -1795,8 +1942,12 @@ private:
       m_capacity = new_cap;
     }
 
+    static constexpr usize MAX_SIZE = static_cast<size_type>(-1);
+
     auto grow() -> void
     {
+      if (m_size == MAX_SIZE)
+        panic("CompactVecBase: more elements than the index type can count");
       reserve_at_least(static_cast<size_type>(m_size + 1));
     }
 
@@ -1999,12 +2150,14 @@ export namespace au::containers
   {
     [[nodiscard]] auto operator()(const T *p) const noexcept -> u64
     {
-      return detail::int_mix(reinterpret_cast<uintptr_t>(p));
+      // SAFETY: the address is only hashed.
+      AU_UNSAFE return detail::int_mix(reinterpret_cast<uintptr_t>(p));
     }
 
     [[nodiscard]] auto operator()(const T *p, u64 seed) const noexcept -> u64
     {
-      return detail::int_mix(reinterpret_cast<uintptr_t>(p) ^ seed);
+      // SAFETY: the address is only hashed.
+      AU_UNSAFE return detail::int_mix(reinterpret_cast<uintptr_t>(p) ^ seed);
     }
   };
 
@@ -2286,7 +2439,8 @@ private:
   {
 public:
 #if defined(AUXID_HAS_SSE2) && !defined(AUXID_DISABLE_HASHMAP_SIMD)
-    explicit Group(const ctrl_t *p) noexcept : m_vec(_mm_loadu_si128(reinterpret_cast<const __m128i *>(p)))
+    // SAFETY: the caller passes 16 readable bytes; the load needs no alignment.
+    AU_UNSAFE explicit Group(const ctrl_t *p) noexcept : m_vec(_mm_loadu_si128(reinterpret_cast<const __m128i *>(p)))
     {
     }
 
@@ -2313,7 +2467,8 @@ private:
     __m128i m_vec;
 
 #elif defined(AUXID_HAS_NEON) && !defined(AUXID_DISABLE_HASHMAP_SIMD)
-    explicit Group(const ctrl_t *p) noexcept : m_vec(vld1q_u8(p))
+    // SAFETY: the caller passes 16 readable bytes.
+    AU_UNSAFE explicit Group(const ctrl_t *p) noexcept : m_vec(vld1q_u8(p))
     {
     }
 
@@ -2354,7 +2509,8 @@ private:
     }
 
 #elif defined(AUXID_HAS_WASM_SIMD128) && !defined(AUXID_DISABLE_HASHMAP_SIMD)
-    explicit Group(const ctrl_t *p) noexcept : m_vec(wasm_v128_load(p))
+    // SAFETY: the caller passes 16 readable bytes.
+    AU_UNSAFE explicit Group(const ctrl_t *p) noexcept : m_vec(wasm_v128_load(p))
     {
     }
 
@@ -2383,11 +2539,15 @@ private:
 #else
     explicit Group(const ctrl_t *p) noexcept
     {
-      std::memcpy(&m_lo, p, sizeof(u64));
-      std::memcpy(&m_hi, p + 8, sizeof(u64));
+      // SAFETY: the caller passes 16 readable bytes.
+      AU_UNSAFE
+      {
+        std::memcpy(&m_lo, p, sizeof(u64));
+        std::memcpy(&m_hi, p + 8, sizeof(u64));
+      }
     }
 
-    [[nodiscard]] BitMask match(u8 needle) const noexcept
+    [[nodiscard]] auto match(u8 needle) const noexcept -> BitMask
     {
       const u64 broadcast = 0x0101010101010101ULL * static_cast<u64>(needle);
       const u64 lx = m_lo ^ broadcast;
@@ -2397,7 +2557,7 @@ private:
       return BitMask(pack_high_bits(lm) | (pack_high_bits(hm) << 8));
     }
 
-    [[nodiscard]] BitMask match_empty() const noexcept
+    [[nodiscard]] auto match_empty() const noexcept -> BitMask
     {
       constexpr u64 broadcast = 0x8080808080808080ULL;
       const u64 lx = m_lo ^ broadcast;
@@ -2407,7 +2567,7 @@ private:
       return BitMask(pack_high_bits(lm) | (pack_high_bits(hm) << 8));
     }
 
-    [[nodiscard]] BitMask match_empty_or_deleted() const noexcept
+    [[nodiscard]] auto match_empty_or_deleted() const noexcept -> BitMask
     {
       const u64 lm = m_lo & 0x8080808080808080ULL;
       const u64 hm = m_hi & 0x8080808080808080ULL;
@@ -2418,7 +2578,7 @@ private:
     u64 m_lo = 0;
     u64 m_hi = 0;
 
-    [[nodiscard]] static u32 pack_high_bits(u64 v) noexcept
+    [[nodiscard]] static auto pack_high_bits(u64 v) noexcept -> u32
     {
       u32 m = 0;
       m |= static_cast<u32>((v >> 7) & 1u) << 0;
@@ -2578,8 +2738,12 @@ public:
       if (other.m_capacity > 0)
       {
         allocate_buffer(other.m_capacity);
-        std::memcpy(m_ctrl, other.m_ctrl, other.m_capacity);
-        std::memcpy(m_index, other.m_index, other.m_capacity * sizeof(u32));
+        // SAFETY: both tables have the same capacity, and these are their control and index arrays.
+        AU_UNSAFE
+        {
+          std::memcpy(m_ctrl, other.m_ctrl, other.m_capacity);
+          std::memcpy(m_index, other.m_index, other.m_capacity * sizeof(u32));
+        }
         m_tombstones = other.m_tombstones;
       }
     }
@@ -2676,7 +2840,8 @@ public:
     auto clear() -> void
     {
       m_entries.clear();
-      if (m_ctrl)
+      // SAFETY: m_ctrl is null or an array of m_capacity control bytes.
+      AU_UNSAFE if (m_ctrl)
         std::memset(m_ctrl, swiss::kEmpty, m_capacity);
       m_tombstones = 0;
     }
@@ -2880,9 +3045,12 @@ private:
 
       AllocatorT alloc = m_entries.get_allocator();
       void *raw = alloc.alloc(total, kCtrlAlign);
-      m_ctrl = static_cast<ctrl_t *>(raw);
-      m_index = reinterpret_cast<u32 *>(static_cast<u8 *>(raw) + ctrl_padded);
-      std::memset(m_ctrl, swiss::kEmpty, ctrl_bytes);
+      // SAFETY: the block starts with the control bytes, and any address is aligned for them.
+      AU_UNSAFE m_ctrl = static_cast<ctrl_t *>(raw);
+      // SAFETY: the index array follows, ctrl_padded keeps it aligned, and total covers it.
+      AU_UNSAFE m_index = reinterpret_cast<u32 *>(static_cast<u8 *>(raw) + ctrl_padded);
+      // SAFETY: m_ctrl points at ctrl_bytes bytes.
+      AU_UNSAFE std::memset(m_ctrl, swiss::kEmpty, ctrl_bytes);
       m_capacity = n_slots;
       m_groups_mask = (n_slots / kGroupWidth) - 1;
       m_tombstones = 0;
@@ -2918,7 +3086,8 @@ private:
     {
       if (m_capacity == 0)
         return;
-      std::memset(m_ctrl, swiss::kEmpty, m_capacity);
+      // SAFETY: m_ctrl points at m_capacity control bytes.
+      AU_UNSAFE std::memset(m_ctrl, swiss::kEmpty, m_capacity);
       m_tombstones = 0;
       for (u32 i = 0; i < static_cast<u32>(m_entries.size()); ++i)
         place_unique(i);
@@ -2932,12 +3101,17 @@ private:
       swiss::ProbeSeq seq(h, m_groups_mask);
       for (;;)
       {
-        const swiss::Group g(m_ctrl + seq.offset());
+        // SAFETY: seq.offset() is a multiple of the group width below m_capacity, so the group is inside m_ctrl.
+        AU_UNSAFE const swiss::Group g(m_ctrl + seq.offset());
         if (auto ed = g.match_empty_or_deleted(); ed.any())
         {
           const size_type slot = seq.offset() + ed.lowest();
-          m_ctrl[slot] = static_cast<ctrl_t>(h2v);
-          m_index[slot] = entry_idx;
+          // SAFETY: slot is inside the group, so it is below m_capacity.
+          AU_UNSAFE
+          {
+            m_ctrl[slot] = static_cast<ctrl_t>(h2v);
+            m_index[slot] = entry_idx;
+          }
           return;
         }
         seq.next();
@@ -2962,12 +3136,14 @@ private:
 
       for (size_type i = 0; i <= m_groups_mask; ++i)
       {
-        const swiss::Group g(m_ctrl + seq.offset());
+        // SAFETY: seq.offset() is a multiple of the group width below m_capacity, so the group is inside m_ctrl.
+        AU_UNSAFE const swiss::Group g(m_ctrl + seq.offset());
 
         for (auto m = g.match(h2v); m.any(); m.clear_lowest())
         {
           const u32 bit = m.lowest();
-          const u32 entry_idx = m_index[seq.offset() + bit];
+          // SAFETY: bit is inside the group, so the slot is below m_capacity.
+          AU_UNSAFE const u32 entry_idx = m_index[seq.offset() + bit];
           if AU_LIKELY (m_eq(m_key_of(m_entries[entry_idx]), key))
             return m_entries[entry_idx];
         }
@@ -2977,7 +3153,8 @@ private:
           if (auto ed = g.match_empty_or_deleted(); ed.any())
           {
             const size_type slot = seq.offset() + ed.lowest();
-            if (m_ctrl[slot] == swiss::kDeleted)
+            // SAFETY: slot is inside the group, so it is below m_capacity.
+            AU_UNSAFE if (m_ctrl[slot] == swiss::kDeleted)
               tombstone_slot = slot;
           }
         }
@@ -2990,8 +3167,12 @@ private:
 
           const u32 entry_idx = static_cast<u32>(m_entries.size());
           m_entries.push(static_cast<Factory &&>(factory)());
-          m_ctrl[place] = static_cast<ctrl_t>(h2v);
-          m_index[place] = entry_idx;
+          // SAFETY: place is a slot found in a group above, so it is below m_capacity.
+          AU_UNSAFE
+          {
+            m_ctrl[place] = static_cast<ctrl_t>(h2v);
+            m_index[place] = entry_idx;
+          }
           if (reuse_tomb)
             --m_tombstones;
           return m_entries[entry_idx];
@@ -3012,13 +3193,18 @@ private:
 
       for (size_type i = 0; i <= m_groups_mask; ++i)
       {
-        const swiss::Group g(m_ctrl + seq.offset());
+        // SAFETY: seq.offset() is a multiple of the group width below m_capacity, so the group is inside m_ctrl.
+        AU_UNSAFE const swiss::Group g(m_ctrl + seq.offset());
         for (auto m = g.match(h2v); m.any(); m.clear_lowest())
         {
           const u32 bit = m.lowest();
-          const u32 entry_idx = m_index[seq.offset() + bit];
+          // SAFETY: bit is inside the group, so the slot is below m_capacity.
+          AU_UNSAFE const u32 entry_idx = m_index[seq.offset() + bit];
           if AU_LIKELY (m_eq(m_key_of(m_entries[entry_idx]), key))
-            return const_cast<Entry *>(&m_entries[entry_idx]);
+          {
+            // SAFETY: the callers that are const only hand out a pointer to const.
+            AU_UNSAFE return const_cast<Entry *>(&m_entries[entry_idx]);
+          }
         }
         if (g.match_empty().any())
           return nullptr;
@@ -3037,15 +3223,18 @@ private:
 
       for (size_type i = 0; i <= m_groups_mask; ++i)
       {
-        const swiss::Group g(m_ctrl + seq.offset());
+        // SAFETY: seq.offset() is a multiple of the group width below m_capacity, so the group is inside m_ctrl.
+        AU_UNSAFE const swiss::Group g(m_ctrl + seq.offset());
         for (auto m = g.match(h2v); m.any(); m.clear_lowest())
         {
           const u32 bit = m.lowest();
           const size_type slot = seq.offset() + bit;
-          const u32 entry_idx = m_index[slot];
+          // SAFETY: slot is inside the group, so it is below m_capacity.
+          AU_UNSAFE const u32 entry_idx = m_index[slot];
           if (m_eq(m_key_of(m_entries[entry_idx]), key))
           {
-            m_ctrl[slot] = swiss::kDeleted;
+            // SAFETY: slot is inside the group, so it is below m_capacity.
+            AU_UNSAFE m_ctrl[slot] = swiss::kDeleted;
             ++m_tombstones;
 
             const u32 last_idx = static_cast<u32>(m_entries.size() - 1);
@@ -3072,12 +3261,14 @@ private:
       swiss::ProbeSeq seq(h, m_groups_mask);
       for (;;)
       {
-        const swiss::Group g(m_ctrl + seq.offset());
+        // SAFETY: seq.offset() is a multiple of the group width below m_capacity, so the group is inside m_ctrl.
+        AU_UNSAFE const swiss::Group g(m_ctrl + seq.offset());
         for (auto m = g.match(h2v); m.any(); m.clear_lowest())
         {
           const u32 bit = m.lowest();
           const size_type slot = seq.offset() + bit;
-          if (m_index[slot] == old_idx)
+          // SAFETY: slot is inside the group, so it is below m_capacity.
+          AU_UNSAFE if (m_index[slot] == old_idx)
           {
             m_index[slot] = new_idx;
             return;
@@ -3188,13 +3379,15 @@ public:
     [[nodiscard]] auto find(const K &key) -> V *
     {
       auto *entry = m_table.find_entry(key);
-      return entry ? &entry->second : nullptr;
+      // SAFETY: find_entry returns null or an entry of the table.
+      AU_UNSAFE return entry ? &entry->second : nullptr;
     }
 
     [[nodiscard]] auto find(const K &key) const -> const V *
     {
       auto *entry = m_table.find_entry(key);
-      return entry ? &entry->second : nullptr;
+      // SAFETY: find_entry returns null or an entry of the table.
+      AU_UNSAFE return entry ? &entry->second : nullptr;
     }
 
     template<class K2>
@@ -3202,7 +3395,8 @@ public:
     [[nodiscard]] auto find(const K2 &key) -> V *
     {
       auto *entry = m_table.find_entry(key);
-      return entry ? &entry->second : nullptr;
+      // SAFETY: find_entry returns null or an entry of the table.
+      AU_UNSAFE return entry ? &entry->second : nullptr;
     }
 
     template<class K2>
@@ -3210,7 +3404,8 @@ public:
     [[nodiscard]] auto find(const K2 &key) const -> const V *
     {
       auto *entry = m_table.find_entry(key);
-      return entry ? &entry->second : nullptr;
+      // SAFETY: find_entry returns null or an entry of the table.
+      AU_UNSAFE return entry ? &entry->second : nullptr;
     }
 
     [[nodiscard]] auto contains(const K &key) const -> bool
@@ -3754,9 +3949,12 @@ public:
       if (write_idx - read_idx == Capacity)
         return false;
 
-      T *slot = reinterpret_cast<T *>(&m_slots[(write_idx & K_MASK) * sizeof(T)]);
+      // SAFETY: the slot is inside m_slots, aligned for T, and free: only this producer writes it until the
+      // store below.
+      AU_UNSAFE T *slot = reinterpret_cast<T *>(&m_slots[(write_idx & K_MASK) * sizeof(T)]);
 
-      new (slot) T(std::move(value));
+      // SAFETY: as above.
+      AU_UNSAFE new (slot) T(std::move(value));
 
       m_write_pos.store(write_idx + 1, std::memory_order_release);
       return true;
@@ -3771,11 +3969,15 @@ public:
       if (read_idx == write_idx)
         return false;
 
-      T *slot = reinterpret_cast<T *>(&m_slots[(read_idx & K_MASK) * sizeof(T)]);
+      // SAFETY: the slot is inside m_slots and holds a T: the producer's store made it visible, and only this consumer
+      // reads it until the store below.
+      AU_UNSAFE T *slot = reinterpret_cast<T *>(&m_slots[(read_idx & K_MASK) * sizeof(T)]);
 
-      out_value = std::move(*slot);
+      // SAFETY: as above.
+      AU_UNSAFE out_value = std::move(*slot);
 
-      slot->~T();
+      // SAFETY: as above; the value is moved from and destroyed once.
+      AU_UNSAFE slot->~T();
 
       m_read_pos.store(read_idx + 1, std::memory_order_release);
       return true;

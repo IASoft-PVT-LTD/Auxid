@@ -12,6 +12,9 @@
 #include <auxid/macros.hpp>
 
 #include <cstring>
+#if !AU_PLATFORM_WINDOWS
+#  include <sys/stat.h>
+#endif
 
 import auxid;
 import auxid.test;
@@ -40,6 +43,9 @@ namespace
       add_test("pipe_roundtrip_and_eof", [this] { return pipe_roundtrip_and_eof(); });
       add_test("channel_roundtrip", [this] { return channel_roundtrip(); });
       add_test("instance_lock", [this] { return instance_lock(); });
+#  if !AU_PLATFORM_WINDOWS
+      add_test("bind_keeps_unreachable_socket", [this] { return bind_keeps_unreachable_socket(); });
+#  endif
 #endif
     }
 
@@ -55,6 +61,29 @@ namespace
     }
 
 #else
+
+#  if !AU_PLATFORM_WINDOWS
+    auto bind_keeps_unreachable_socket() -> bool
+    {
+      const String name = String::format("test-bind-{}", time::monotonic_ns());
+      auto first = ipc::ChannelListener::bind(name);
+      if (!check(first.is_ok(), "first bind ok"))
+        return false;
+
+      // A probe fails with EACCES, not ECONNREFUSED (as root it succeeds): the owner is alive either way.
+      String path = env::get_or("XDG_RUNTIME_DIR", "/tmp");
+      path.append("/auxid.");
+      path.append(name);
+      path.append(".sock");
+      ::chmod(path.c_str(), 0);
+      auto second = ipc::ChannelListener::bind(name);
+      if (!check(second.is_err(), "second bind is an Err"))
+        return false;
+
+      ::chmod(path.c_str(), 0600);
+      return check(ipc::Channel::connect(name).is_ok(), "the first listener is still reachable");
+    }
+#  endif
 
     auto pipe_roundtrip_and_eof() -> bool
     {

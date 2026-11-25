@@ -1,3 +1,4 @@
+// auxid: trust-level 1
 // Auxid: The Rigid C++ Platform.
 //
 // Copyright (C) 2026 I-A-S (ias@iasoft.dev)
@@ -64,7 +65,8 @@ public:
     {
       static_assert(std::is_pointer_v<T>, "symbol_as<T>: T must be a pointer type");
       AU_TRY_VAR(raw, symbol(name));
-      return reinterpret_cast<T>(raw);
+      // SAFETY: the caller vouches that the symbol has type T; the loader has no type to check.
+      AU_UNSAFE return reinterpret_cast<T>(raw);
     }
 
     auto close() -> Result<void>;

@@ -10,27 +10,27 @@ The OS layer is `auxid.time`, `auxid.env`, `auxid.ipc`, `auxid.proc`, `auxid.dl`
 
 | | Human | Claude Fable 5 | Claude Opus 5.5 | All AI |
 | --- | --- | --- | --- | --- |
-| Whole repository, 15,338 lines | **66.1%** | 22.1% | 11.9% | **33.9%** |
-| Library only, 8,538 lines | **59.6%** | 30.8% | 9.5% | **40.4%** |
-| Library without the OS layer, 6,323 lines | **80.4%** | 6.8% | 12.8% | **19.6%** |
-| AI commits | | 19 | 9 | 28 |
+| Whole repository, 16,121 lines | **61.4%** | 19.8% | 18.7% | **38.6%** |
+| Library only, 9,126 lines | **53.3%** | 26.7% | 20.0% | **46.7%** |
+| Library without the OS layer, 6,669 lines | **72.8%** | 6.1% | 21.1% | **27.2%** |
+| AI commits | | 19 | 18 | 37 |
 
 The first commit marked as AI is from 2026-08-26. Percentages are rounded and may not add up to exactly 100.
 
-These numbers follow moved and copied lines back to their source. Without that, AI is 35.3% of the repository instead of 33.9%.
+These numbers follow moved and copied lines back to their source. Without that, AI is 39.9% of the repository instead of 38.6%.
 
 ## By area
 
 | Area | Lines | Human | Claude Fable 5 | Claude Opus 5.5 | Files with no AI code commits |
 | --- | --- | --- | --- | --- | --- |
-| Library, without the OS layer | 6,323 | 5,083 (80.4%) | 430 (6.8%) | 810 (12.8%) | 1 of 13 |
-| OS layer | 2,215 | 8 (0.4%) | 2,202 (99.4%) | 5 (0.2%) | 0 of 11 |
-| Tests | 2,606 | 1,377 (52.8%) | 602 (23.1%) | 627 (24.1%) | 11 of 23 |
+| Library, without the OS layer | 6,669 | 4,857 (72.8%) | 407 (6.1%) | 1,405 (21.1%) | 1 of 13 |
+| OS layer | 2,457 | 8 (0.3%) | 2,027 (82.5%) | 422 (17.2%) | 0 of 11 |
+| Tests | 2,801 | 1,377 (49.2%) | 616 (22.0%) | 808 (28.8%) | 10 of 23 |
 | Benchmarks | 1,677 | 1,677 (100.0%) | 0 (0.0%) | 0 (0.0%) | 10 of 11 |
 | Build files and presets | 1,358 | 1,325 (97.6%) | 27 (2.0%) | 6 (0.4%) | 19 of 23 |
 | CI, tools and config | 900 | 628 (69.8%) | 0 (0.0%) | 272 (30.2%) | 7 of 9 |
-| README and docs | 259 | 34 (13.1%) | 124 (47.9%) | 101 (39.0%) | 0 of 2 |
-| **Total** | 15,338 | 10,132 (66.1%) | 3,385 (22.1%) | 1,821 (11.9%) | 48 of 92 |
+| README and docs | 259 | 34 (13.1%) | 119 (45.9%) | 106 (40.9%) | 0 of 2 |
+| **Total** | 16,121 | 9,906 (61.4%) | 3,196 (19.8%) | 3,019 (18.7%) | 47 of 92 |
 
 ## Files with AI-written lines
 
@@ -40,33 +40,33 @@ Each count is the number of lines that survive today. The few human lines in fil
 
 | File | Lines | Human | Claude Fable 5 | Claude Opus 5.5 | What the AI wrote |
 | --- | --- | --- | --- | --- | --- |
-| [include/auxid/macros.hpp](include/auxid/macros.hpp) | 110 | 93 (85%) | 11 | 6 | Fable 5: function attributes. Opus 5.5: C++20 check, `<utility>` include |
+| [include/auxid/macros.hpp](include/auxid/macros.hpp) | 123 | 93 (76%) | 11 | 19 | Fable 5: function attributes. Opus 5.5: C++20 check, `<utility>` include, `AU_UNSAFE`, `AU_IMPLICIT` |
 | [src/cpp/auxid-containers.cpp](src/cpp/auxid-containers.cpp) | 39 | 25 (64%) | 14 | 0 | Fable 5: `Error::os_last` |
-| [src/cpp/auxid-core.cpp](src/cpp/auxid-core.cpp) | 109 | 24 (22%) | 0 | 85 | Opus 5.5: console output, panic printing |
+| [src/cpp/auxid-core.cpp](src/cpp/auxid-core.cpp) | 123 | 24 (20%) | 0 | 99 | Opus 5.5: console output, panic printing, SAFETY comments |
 | [src/cpp/auxid-test.cpp](src/cpp/auxid-test.cpp) | 68 | 54 (79%) | 0 | 14 | Opus 5.5: printing |
-| [src/cpp/auxid-thread.cpp](src/cpp/auxid-thread.cpp) | 281 | 120 (43%) | 142 | 19 | Fable 5: the native thread backend. Opus 5.5: log line output |
-| [src/ixx/auxid-containers.ixx](src/ixx/auxid-containers.ixx) | 3,266 | 2,772 (85%) | 153 | 341 | Fable 5: nearly all of `Error`, parts of `BasicString`. Opus 5.5: allocator handling in `BasicString`, `CompactVecBase`, `SlotMap` and the hash containers |
-| [src/ixx/auxid-core.ixx](src/ixx/auxid-core.ixx) | 557 | 476 (85%) | 30 | 51 | Fable 5: `ResultT`. Opus 5.5: `std::expected` guards, console output declarations |
+| [src/cpp/auxid-thread.cpp](src/cpp/auxid-thread.cpp) | 304 | 119 (39%) | 129 | 56 | Fable 5: the native thread backend. Opus 5.5: log line output, SAFETY comments |
+| [src/ixx/auxid-containers.ixx](src/ixx/auxid-containers.ixx) | 3,466 | 2,631 (76%) | 149 | 686 | Fable 5: nearly all of `Error`, parts of `BasicString`. Opus 5.5: allocator handling in `BasicString`, `CompactVecBase`, `SlotMap` and the hash containers, SAFETY comments |
+| [src/ixx/auxid-core.ixx](src/ixx/auxid-core.ixx) | 592 | 434 (73%) | 27 | 131 | Fable 5: `ResultT`. Opus 5.5: `std::expected` guards, console output declarations, SAFETY comments |
 | [src/ixx/auxid-fs.ixx](src/ixx/auxid-fs.ixx) | 450 | 444 (99%) | 4 | 2 | Fable 5: small edits |
-| [src/ixx/auxid-memory.ixx](src/ixx/auxid-memory.ixx) | 861 | 565 (66%) | 14 | 282 | Opus 5.5: `AllocatorRef`, most of `ArenaAllocator`, the allocator handle concepts, assignment in `Arc` and `IntrusiveArc`. Fable 5: small edits |
-| [src/ixx/auxid-test.ixx](src/ixx/auxid-test.ixx) | 313 | 303 (97%) | 0 | 10 | Opus 5.5: printing |
-| [src/ixx/auxid-thread.ixx](src/ixx/auxid-thread.ixx) | 242 | 185 (76%) | 57 | 0 | Fable 5: `ThreadT`, `NativeThread` |
+| [src/ixx/auxid-memory.ixx](src/ixx/auxid-memory.ixx) | 912 | 532 (58%) | 14 | 366 | Opus 5.5: `AllocatorRef`, most of `ArenaAllocator`, the allocator handle concepts, assignment in `Arc` and `IntrusiveArc`, SAFETY comments. Fable 5: small edits |
+| [src/ixx/auxid-test.ixx](src/ixx/auxid-test.ixx) | 320 | 295 (92%) | 0 | 25 | Opus 5.5: printing, SAFETY comments |
+| [src/ixx/auxid-thread.ixx](src/ixx/auxid-thread.ixx) | 245 | 184 (75%) | 54 | 7 | Fable 5: `ThreadT`, `NativeThread`. Opus 5.5: SAFETY comments |
 | [src/ixx/auxid.ixx](src/ixx/auxid.ixx) | 11 | 6 (55%) | 5 | 0 | Fable 5: the OS layer exports |
 
 ### OS layer
 
 | File | Lines | Human | Claude Fable 5 | Claude Opus 5.5 |
 | --- | --- | --- | --- | --- |
-| [src/cpp/auxid-dl.cpp](src/cpp/auxid-dl.cpp) | 102 | 2 (2%) | 100 | 0 |
-| [src/cpp/auxid-env.cpp](src/cpp/auxid-env.cpp) | 330 | 0 (0%) | 330 | 0 |
-| [src/cpp/auxid-ipc.cpp](src/cpp/auxid-ipc.cpp) | 542 | 2 (0%) | 540 | 0 |
-| [src/cpp/auxid-proc.cpp](src/cpp/auxid-proc.cpp) | 529 | 2 (0%) | 527 | 0 |
+| [src/cpp/auxid-dl.cpp](src/cpp/auxid-dl.cpp) | 110 | 2 (2%) | 94 | 14 |
+| [src/cpp/auxid-env.cpp](src/cpp/auxid-env.cpp) | 356 | 0 (0%) | 311 | 45 |
+| [src/cpp/auxid-ipc.cpp](src/cpp/auxid-ipc.cpp) | 594 | 2 (0%) | 508 | 84 |
+| [src/cpp/auxid-proc.cpp](src/cpp/auxid-proc.cpp) | 667 | 2 (0%) | 415 | 250 |
 | [src/cpp/auxid-time.cpp](src/cpp/auxid-time.cpp) | 24 | 0 (0%) | 24 | 0 |
-| [src/hpp/auxid_win32.hpp](src/hpp/auxid_win32.hpp) | 166 | 0 (0%) | 161 | 5 |
-| [src/ixx/auxid-dl.ixx](src/ixx/auxid-dl.ixx) | 56 | 0 (0%) | 56 | 0 |
+| [src/hpp/auxid_win32.hpp](src/hpp/auxid_win32.hpp) | 168 | 0 (0%) | 161 | 7 |
+| [src/ixx/auxid-dl.ixx](src/ixx/auxid-dl.ixx) | 57 | 0 (0%) | 55 | 2 |
 | [src/ixx/auxid-env.ixx](src/ixx/auxid-env.ixx) | 41 | 0 (0%) | 41 | 0 |
 | [src/ixx/auxid-ipc.ixx](src/ixx/auxid-ipc.ixx) | 248 | 2 (1%) | 246 | 0 |
-| [src/ixx/auxid-proc.ixx](src/ixx/auxid-proc.ixx) | 153 | 0 (0%) | 153 | 0 |
+| [src/ixx/auxid-proc.ixx](src/ixx/auxid-proc.ixx) | 168 | 0 (0%) | 148 | 20 |
 | [src/ixx/auxid-time.ixx](src/ixx/auxid-time.ixx) | 24 | 0 (0%) | 24 | 0 |
 
 ### Tests
@@ -74,16 +74,17 @@ Each count is the number of lines that survive today. The few human lines in fil
 | File | Lines | Human | Claude Fable 5 | Claude Opus 5.5 |
 | --- | --- | --- | --- | --- |
 | [tests/CMakeLists.txt](tests/CMakeLists.txt) | 58 | 41 (71%) | 16 | 1 |
-| [tests/cpp/containers/string.cpp](tests/cpp/containers/string.cpp) | 149 | 74 (50%) | 18 | 57 |
+| [tests/cpp/containers/string.cpp](tests/cpp/containers/string.cpp) | 187 | 74 (40%) | 18 | 95 |
+| [tests/cpp/containers/vec.cpp](tests/cpp/containers/vec.cpp) | 96 | 55 (57%) | 0 | 41 |
 | [tests/cpp/core/result.cpp](tests/cpp/core/result.cpp) | 178 | 82 (46%) | 88 | 8 |
 | [tests/cpp/main.cpp](tests/cpp/main.cpp) | 24 | 21 (88%) | 0 | 3 |
 | [tests/cpp/memory/arc.cpp](tests/cpp/memory/arc.cpp) | 86 | 8 (9%) | 0 | 78 |
 | [tests/cpp/memory/arena.cpp](tests/cpp/memory/arena.cpp) | 563 | 83 (15%) | 0 | 480 |
 | [tests/cpp/memory/foreign_thread.cpp](tests/cpp/memory/foreign_thread.cpp) | 49 | 8 (16%) | 41 | 0 |
 | [tests/cpp/os/dl.cpp](tests/cpp/os/dl.cpp) | 74 | 8 (11%) | 66 | 0 |
-| [tests/cpp/os/env.cpp](tests/cpp/os/env.cpp) | 91 | 8 (9%) | 83 | 0 |
-| [tests/cpp/os/ipc.cpp](tests/cpp/os/ipc.cpp) | 117 | 8 (7%) | 109 | 0 |
-| [tests/cpp/os/proc.cpp](tests/cpp/os/proc.cpp) | 156 | 8 (5%) | 148 | 0 |
+| [tests/cpp/os/env.cpp](tests/cpp/os/env.cpp) | 116 | 8 (7%) | 83 | 25 |
+| [tests/cpp/os/ipc.cpp](tests/cpp/os/ipc.cpp) | 143 | 8 (6%) | 109 | 26 |
+| [tests/cpp/os/proc.cpp](tests/cpp/os/proc.cpp) | 221 | 8 (4%) | 162 | 51 |
 | [tests/cpp/os/time.cpp](tests/cpp/os/time.cpp) | 41 | 8 (20%) | 33 | 0 |
 
 ### Build files and presets
@@ -107,7 +108,7 @@ Each count is the number of lines that survive today. The few human lines in fil
 | File | Lines | Human | Claude Fable 5 | Claude Opus 5.5 |
 | --- | --- | --- | --- | --- |
 | [README.md](README.md) | 136 | 34 (25%) | 1 | 101 |
-| [docs/OS-CONTRACT.md](docs/OS-CONTRACT.md) | 123 | 0 (0%) | 123 | 0 |
+| [docs/OS-CONTRACT.md](docs/OS-CONTRACT.md) | 123 | 0 (0%) | 118 | 5 |
 
 AI commits changed these files too, but none of their lines survive:
 
@@ -118,7 +119,7 @@ AI commits changed these files too, but none of their lines survive:
 The two AI relicense commits changed the licence header in most of these. Nothing else in them has an AI commit.
 
 - **Library, without the OS layer:** `include/auxid/api.hpp`
-- **Tests:** `tests/cpp/containers/format.cpp`, `tests/cpp/containers/hash_base.cpp`, `tests/cpp/containers/hash_map.cpp`, `tests/cpp/containers/hash_set.cpp`, `tests/cpp/containers/iterator_concepts.cpp`, `tests/cpp/containers/option.cpp`, `tests/cpp/containers/pair.cpp`, `tests/cpp/containers/slot_map.cpp`, `tests/cpp/containers/vec.cpp`, `tests/cpp/memory/heap.cpp`, `tests/cpp/thread/thread.cpp`
+- **Tests:** `tests/cpp/containers/format.cpp`, `tests/cpp/containers/hash_base.cpp`, `tests/cpp/containers/hash_map.cpp`, `tests/cpp/containers/hash_set.cpp`, `tests/cpp/containers/iterator_concepts.cpp`, `tests/cpp/containers/option.cpp`, `tests/cpp/containers/pair.cpp`, `tests/cpp/containers/slot_map.cpp`, `tests/cpp/memory/heap.cpp`, `tests/cpp/thread/thread.cpp`
 - **Benchmarks:** `benchmarks/build.py`, `benchmarks/cpp/containers/hash_map_shared.hpp`, `benchmarks/cpp/containers/hash_map_vs_unordered_map.cpp`, `benchmarks/cpp/core/exception_baseline.cpp`, `benchmarks/cpp/core/exception_baseline_shared.hpp`, `benchmarks/cpp/core/result_vs_exceptions.cpp`, `benchmarks/cpp/core/result_vs_exceptions_shared.hpp`, `benchmarks/cpp/main.cpp`, `benchmarks/generate_csv.py`, `benchmarks/run.py`
 - **Build files and presets:** `CMakePresets.json`, `cmake/AuxidConfig.cmake.in`, `cmake/auxid_fetch_google_benchmark.cmake`, `cmake/auxid_install.cmake`, `cmake/auxid_lint_ban_list.cmake`, `cmake/auxid_msvc_pgo.cmake`, `cmake/auxid_sanitizers.cmake`, `cmake/toolchains/arm64-darwin-clang.cmake`, `cmake/toolchains/arm64-linux-clang.cmake`, `cmake/toolchains/arm64-linux-gcc.cmake`, `cmake/toolchains/arm64-linux-native-clang.cmake`, `cmake/toolchains/arm64-windows-clang.cmake`, `cmake/toolchains/arm64-windows-msvc.cmake`, `cmake/toolchains/wasm32-emscripten-clang.cmake`, `cmake/toolchains/x64-darwin-clang.cmake`, `cmake/toolchains/x64-linux-clang.cmake`, `cmake/toolchains/x64-linux-gcc.cmake`, `cmake/toolchains/x64-windows-clang.cmake`, `cmake/toolchains/x64-windows-msvc.cmake`
 - **CI, tools and config:** `.clang-format`, `.clang-tidy`, `.github/workflows/package.yaml`, `.gitignore`, `.vscode/launch.json`, `.vscode/settings.json`, `.vscode/tasks.json`
@@ -129,6 +130,15 @@ Commits that only change this file are left out.
 
 | Commit | Date | Model | Author | Subject |
 | --- | --- | --- | --- | --- |
+| `b37023c` | 2026-11-25 | Claude Opus 5.5 | Claude | [FIX]: Windows: Text and Buffers Longer Than an Int Can Say |
+| `c2cd6c4` | 2026-11-25 | Claude Opus 5.5 | Claude | [FIX]: proc and ipc: Kills of Recycled Pids, Leaks on Failed Spawns, Lost Sockets |
+| `a84b17b` | 2026-11-25 | Claude Opus 5.5 | Claude | [FIX]: Containers: Arguments That Refer Into the Container |
+| `0bf1a95` | 2026-11-25 | Claude Opus 5.5 | Claude | [MAINTAIN]: Mark Unsafe Code in String Members Nothing Instantiates |
+| `a45020b` | 2026-11-25 | Claude Opus 5.5 | Claude | [MAINTAIN]: Mark Unsafe Code in containers |
+| `d43626a` | 2026-11-25 | Claude Opus 5.5 | Claude | [MAINTAIN]: Mark Unsafe Code in memory, core and test |
+| `d98d7b1` | 2026-11-25 | Claude Opus 5.5 | Claude | [MAINTAIN]: Mark Unsafe Code in thread, ipc and proc |
+| `bb29dda` | 2026-11-25 | Claude Opus 5.5 | Claude | [MAINTAIN]: Skip the Trust Level Line in the Authorship Map |
+| `fdf8c43` | 2026-11-25 | Claude Opus 5.5 | Claude | [MAINTAIN]: Mark Unsafe Code in dl, env, time and Core Output |
 | `c3d9329` | 2026-11-25 | Claude Opus 5.5 | Claude | [MAINTAIN]: Write Return Types Trailing |
 | `c1ae7a7` | 2026-11-24 | Claude Opus 5.5 | Claude | [CI]: Add tools/authorship_map.py And A Check That AI-Human-Map.md Is Current |
 | `e35f587` | 2026-11-24 | Claude Opus 5.5 | Claude | [MAINTAIN]: Rewrite README |

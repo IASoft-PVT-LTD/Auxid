@@ -1,3 +1,4 @@
+// auxid: trust-level 1
 // Auxid: The Rigid C++ Platform.
 //
 // Copyright (C) 2026 I-A-S (ias@iasoft.dev)
@@ -23,8 +24,20 @@ export module auxid.proc;
 
 export import auxid.core;
 export import auxid.ipc;
+import auxid.memory;
 import auxid.containers;
 import auxid.fs;
+
+namespace au::proc::detail
+{
+  // POSIX: the children of a LifetimeGroup that were not reaped yet. Reaping and killing both hold the lock, so
+  // a pid is never signalled after the OS could have given it to another process.
+  struct Children
+  {
+    Mutex mutex{};
+    Vec<u64> pids{};
+  };
+} // namespace au::proc::detail
 
 export namespace au::proc
 {
@@ -56,7 +69,7 @@ public:
     auto operator=(const LifetimeGroup &) -> LifetimeGroup & = delete;
 
     LifetimeGroup(LifetimeGroup &&other) noexcept
-        : m_native(other.m_native), m_pids(static_cast<Vec<u64> &&>(other.m_pids))
+        : m_native(other.m_native), m_children(static_cast<Arc<detail::Children> &&>(other.m_children))
     {
       other.m_native = -1;
     }
@@ -67,7 +80,7 @@ public:
       {
         close();
         m_native = other.m_native;
-        m_pids = static_cast<Vec<u64> &&>(other.m_pids);
+        m_children = static_cast<Arc<detail::Children> &&>(other.m_children);
         other.m_native = -1;
       }
       return *this;
@@ -87,8 +100,8 @@ private:
     friend class Process;
     friend auto spawn(const filesystem::Path &exe, SpawnOptions opts) -> Result<Process>;
 
-    i64 m_native = -1;   // Windows: job object handle; POSIX: unused
-    Vec<u64> m_pids{};   // POSIX: enrolled pids, killed on close
+    i64 m_native = -1;                   // Windows: job object handle; POSIX: unused
+    Arc<detail::Children> m_children{}; // POSIX: killed on close; made by the first spawn
   };
 
   struct SpawnOptions
@@ -111,7 +124,8 @@ public:
 
     Process(Process &&other) noexcept
         : m_process(other.m_process), m_id(other.m_id), m_reaped(other.m_reaped),
-          m_last_status(other.m_last_status), m_stdin(static_cast<ipc::PipeWriter &&>(other.m_stdin)),
+          m_last_status(other.m_last_status), m_children(static_cast<Arc<detail::Children> &&>(other.m_children)),
+          m_stdin(static_cast<ipc::PipeWriter &&>(other.m_stdin)),
           m_stdout(static_cast<ipc::PipeReader &&>(other.m_stdout)),
           m_stderr(static_cast<ipc::PipeReader &&>(other.m_stderr))
     {
@@ -128,6 +142,7 @@ public:
         m_id = other.m_id;
         m_reaped = other.m_reaped;
         m_last_status = other.m_last_status;
+        m_children = static_cast<Arc<detail::Children> &&>(other.m_children);
         m_stdin = static_cast<ipc::PipeWriter &&>(other.m_stdin);
         m_stdout = static_cast<ipc::PipeReader &&>(other.m_stdout);
         m_stderr = static_cast<ipc::PipeReader &&>(other.m_stderr);
@@ -175,7 +190,8 @@ public:
     [[nodiscard]] auto try_status() -> Result<Option<ExitStatus>>;
 
     // Hard kill (TerminateProcess / SIGKILL). Graceful shutdown is an IPC
-    // message + this as the fallback (D-010: no request_exit).
+    // message + this as the fallback (D-010: no request_exit). An Err once
+    // wait() or try_status() has seen the child exit.
     auto terminate() -> Result<void>;
 
 private:
@@ -185,6 +201,7 @@ private:
     u64 m_id = 0;
     bool m_reaped = false;
     ExitStatus m_last_status{};
+    Arc<detail::Children> m_children{}; // POSIX: the group it was spawned into, or null
     ipc::PipeWriter m_stdin{};
     ipc::PipeReader m_stdout{};
     ipc::PipeReader m_stderr{};

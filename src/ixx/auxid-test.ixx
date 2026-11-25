@@ -62,7 +62,8 @@ export namespace au::test
         if (value == nullptr)
           return String("nullptr");
         char buf[32];
-        std::snprintf(buf, sizeof(buf), "ptr(%p)", static_cast<const void *>(value));
+        // SAFETY: bounded by sizeof(buf), which fits any pointer, and the format matches.
+        AU_UNSAFE std::snprintf(buf, sizeof(buf), "ptr(%p)", static_cast<const void *>(value));
         return String(buf);
       }
     }
@@ -106,20 +107,23 @@ public:
     template<class F>
       requires std::invocable<F> && std::same_as<std::invoke_result_t<F>, bool> && std::is_trivially_copyable_v<F> &&
                (sizeof(F) <= kBufSize) && (alignof(F) <= alignof(void *))
-    TestFunctor(F f) noexcept : m_invoke(&invoke_impl<F>)
+    AU_IMPLICIT TestFunctor(F f) noexcept : m_invoke(&invoke_impl<F>)
     {
-      au::construct_at(reinterpret_cast<F *>(&m_buf), std::move(f));
+      // SAFETY: the constraints above guarantee that m_buf is large and aligned enough for F.
+      AU_UNSAFE au::construct_at(reinterpret_cast<F *>(&m_buf), std::move(f));
     }
 
     TestFunctor(const TestFunctor &other) noexcept : m_invoke(other.m_invoke)
     {
-      if (m_invoke != nullptr)
+      // SAFETY: if m_invoke is set, both buffers hold kBufSize bytes of a trivially copyable functor.
+      AU_UNSAFE if (m_invoke != nullptr)
         std::memcpy(m_buf, other.m_buf, kBufSize);
     }
 
     TestFunctor(TestFunctor &&other) noexcept : m_invoke(other.m_invoke)
     {
-      if (m_invoke != nullptr)
+      // SAFETY: if m_invoke is set, both buffers hold kBufSize bytes of a trivially copyable functor.
+      AU_UNSAFE if (m_invoke != nullptr)
         std::memcpy(m_buf, other.m_buf, kBufSize);
       other.m_invoke = nullptr;
     }
@@ -129,7 +133,8 @@ public:
       if (this != &other)
       {
         m_invoke = other.m_invoke;
-        if (m_invoke != nullptr)
+        // SAFETY: if m_invoke is set, both buffers hold kBufSize bytes of a trivially copyable functor.
+        AU_UNSAFE if (m_invoke != nullptr)
           std::memcpy(m_buf, other.m_buf, kBufSize);
       }
       return *this;
@@ -140,7 +145,8 @@ public:
       if (this != &other)
       {
         m_invoke = other.m_invoke;
-        if (m_invoke != nullptr)
+        // SAFETY: if m_invoke is set, both buffers hold kBufSize bytes of a trivially copyable functor.
+        AU_UNSAFE if (m_invoke != nullptr)
           std::memcpy(m_buf, other.m_buf, kBufSize);
         other.m_invoke = nullptr;
       }
@@ -156,7 +162,8 @@ private:
     template<class F>
     static auto invoke_impl(const void *p) noexcept(noexcept((*static_cast<const F *>(p))())) -> bool
     {
-      return (*static_cast<const F *>(p))();
+      // SAFETY: p is m_buf, and m_invoke is this function only while m_buf holds an F.
+      AU_UNSAFE return (*static_cast<const F *>(p))();
     }
   };
 
