@@ -1,3 +1,4 @@
+// auxid: trust-level 1
 // Auxid: The Rigid C++ Platform.
 //
 // Copyright (C) 2026 I-A-S (ias@iasoft.dev)
@@ -53,7 +54,8 @@ namespace au::dl
 
   AUXID_API auto Library::open(const filesystem::Path &path) -> Result<Library>
   {
-    void *module_handle = ::LoadLibraryW(path.c_str());
+    // SAFETY: c_str() is null-terminated and outlives the call.
+    AU_UNSAFE void *module_handle = ::LoadLibraryW(path.c_str());
     if (module_handle == nullptr)
       return fail(Error::os_last().ctx("dl::Library::open"));
     Library lib;
@@ -66,7 +68,8 @@ namespace au::dl
     if (m_native == nullptr)
       return fail("dl::Library::symbol: library is not open");
     const String zname(name);
-    void *address = ::GetProcAddress(m_native, zname.c_str());
+    // SAFETY: m_native is a live module handle, zname is null-terminated and outlives the call.
+    AU_UNSAFE void *address = ::GetProcAddress(m_native, zname.c_str());
     if (address == nullptr)
       return fail(Error::os_last().ctx("dl::Library::symbol"));
     return address;
@@ -78,7 +81,9 @@ namespace au::dl
       return {};
     void *module_handle = m_native;
     m_native = nullptr;
-    if (::FreeLibrary(module_handle) == 0)
+    // SAFETY: the handle came from LoadLibraryW, and m_native no longer holds it, so it is freed once.
+    AU_UNSAFE const int freed = ::FreeLibrary(module_handle);
+    if (freed == 0)
       return fail(Error::os_last().ctx("dl::Library::close"));
     return {};
   }
@@ -87,7 +92,8 @@ namespace au::dl
 
   AUXID_API auto Library::open(const filesystem::Path &path) -> Result<Library>
   {
-    void *handle = ::dlopen(path.c_str(), RTLD_NOW | RTLD_LOCAL);
+    // SAFETY: c_str() is null-terminated and outlives the call.
+    AU_UNSAFE void *handle = ::dlopen(path.c_str(), RTLD_NOW | RTLD_LOCAL);
     if (handle == nullptr)
     {
       const char *reason = ::dlerror();
@@ -104,7 +110,8 @@ namespace au::dl
       return fail("dl::Library::symbol: library is not open");
     const String zname(name);
     ::dlerror(); // clear any stale error: null symbol values are legal
-    void *address = ::dlsym(m_native, zname.c_str());
+    // SAFETY: m_native is a live dlopen handle, zname is null-terminated and outlives the call.
+    AU_UNSAFE void *address = ::dlsym(m_native, zname.c_str());
     const char *reason = ::dlerror();
     if (reason != nullptr)
       return fail("dl::Library::symbol: {}", reason);
@@ -117,7 +124,9 @@ namespace au::dl
       return {};
     void *handle = m_native;
     m_native = nullptr;
-    if (::dlclose(handle) != 0)
+    // SAFETY: the handle came from dlopen, and m_native no longer holds it, so it is closed once.
+    AU_UNSAFE const int status = ::dlclose(handle);
+    if (status != 0)
     {
       const char *reason = ::dlerror();
       return fail("dl::Library::close: {}", reason != nullptr ? reason : "unknown dlclose failure");

@@ -95,6 +95,16 @@
 
 #define AU_UNUSED(v) (void) (v)
 
+// AU_UNSAFE marks a block, statement or declaration that does something Rigid C++ rejects: raw pointer
+// arithmetic, pointer casts, C calls, manual memory. A `// SAFETY:` comment right above says why it is sound.
+// Read by auxcc, the Auxid compiler; means nothing to other compilers. clang::suppress, because clang::annotate
+// on a local variable costs optimizations.
+#if defined(__auxcc__)
+#  define AU_UNSAFE [[clang::suppress("au::unsafe")]]
+#else
+#  define AU_UNSAFE
+#endif
+
 #if defined(_MSC_VER)
 #  define AUXID_NO_UNIQUE_ADDRESS [[msvc::no_unique_address]]
 #else
