@@ -10,27 +10,27 @@ The OS layer is `auxid.time`, `auxid.env`, `auxid.ipc`, `auxid.proc`, `auxid.dl`
 
 | | Human | Claude Fable 5 | Claude Opus 5.5 | All AI |
 | --- | --- | --- | --- | --- |
-| Whole repository, 15,337 lines | **67.6%** | 22.1% | 10.3% | **32.4%** |
-| Library only, 8,537 lines | **62.4%** | 30.8% | 6.8% | **37.6%** |
-| Library without the OS layer, 6,322 lines | **84.1%** | 6.8% | 9.1% | **15.9%** |
-| AI commits | | 19 | 8 | 27 |
+| Whole repository, 15,338 lines | **66.1%** | 22.1% | 11.9% | **33.9%** |
+| Library only, 8,538 lines | **59.6%** | 30.8% | 9.5% | **40.4%** |
+| Library without the OS layer, 6,323 lines | **80.4%** | 6.8% | 12.8% | **19.6%** |
+| AI commits | | 19 | 9 | 28 |
 
 The first commit marked as AI is from 2026-08-26. Percentages are rounded and may not add up to exactly 100.
 
-These numbers follow moved and copied lines back to their source. Without that, AI is 33.4% of the repository instead of 32.4%.
+These numbers follow moved and copied lines back to their source. Without that, AI is 35.3% of the repository instead of 33.9%.
 
 ## By area
 
 | Area | Lines | Human | Claude Fable 5 | Claude Opus 5.5 | Files with no AI code commits |
 | --- | --- | --- | --- | --- | --- |
-| Library, without the OS layer | 6,322 | 5,319 (84.1%) | 429 (6.8%) | 574 (9.1%) | 1 of 13 |
+| Library, without the OS layer | 6,323 | 5,083 (80.4%) | 430 (6.8%) | 810 (12.8%) | 1 of 13 |
 | OS layer | 2,215 | 8 (0.4%) | 2,202 (99.4%) | 5 (0.2%) | 0 of 11 |
 | Tests | 2,606 | 1,377 (52.8%) | 602 (23.1%) | 627 (24.1%) | 11 of 23 |
 | Benchmarks | 1,677 | 1,677 (100.0%) | 0 (0.0%) | 0 (0.0%) | 10 of 11 |
 | Build files and presets | 1,358 | 1,325 (97.6%) | 27 (2.0%) | 6 (0.4%) | 19 of 23 |
 | CI, tools and config | 900 | 628 (69.8%) | 0 (0.0%) | 272 (30.2%) | 7 of 9 |
 | README and docs | 259 | 34 (13.1%) | 124 (47.9%) | 101 (39.0%) | 0 of 2 |
-| **Total** | 15,337 | 10,368 (67.6%) | 3,384 (22.1%) | 1,585 (10.3%) | 48 of 92 |
+| **Total** | 15,338 | 10,132 (66.1%) | 3,385 (22.1%) | 1,821 (11.9%) | 48 of 92 |
 
 ## Files with AI-written lines
 
@@ -44,12 +44,12 @@ Each count is the number of lines that survive today. The few human lines in fil
 | [src/cpp/auxid-containers.cpp](src/cpp/auxid-containers.cpp) | 39 | 25 (64%) | 14 | 0 | Fable 5: `Error::os_last` |
 | [src/cpp/auxid-core.cpp](src/cpp/auxid-core.cpp) | 109 | 24 (22%) | 0 | 85 | Opus 5.5: console output, panic printing |
 | [src/cpp/auxid-test.cpp](src/cpp/auxid-test.cpp) | 68 | 54 (79%) | 0 | 14 | Opus 5.5: printing |
-| [src/cpp/auxid-thread.cpp](src/cpp/auxid-thread.cpp) | 281 | 121 (43%) | 142 | 18 | Fable 5: the native thread backend. Opus 5.5: log line output |
-| [src/ixx/auxid-containers.ixx](src/ixx/auxid-containers.ixx) | 3,265 | 2,966 (91%) | 153 | 146 | Fable 5: nearly all of `Error`, parts of `BasicString`. Opus 5.5: allocator handling in `BasicString`, `CompactVecBase`, `SlotMap` and the hash containers |
-| [src/ixx/auxid-core.ixx](src/ixx/auxid-core.ixx) | 557 | 512 (92%) | 29 | 16 | Fable 5: `ResultT`. Opus 5.5: `std::expected` guards, console output declarations |
-| [src/ixx/auxid-fs.ixx](src/ixx/auxid-fs.ixx) | 450 | 446 (99%) | 4 | 0 | Fable 5: small edits |
+| [src/cpp/auxid-thread.cpp](src/cpp/auxid-thread.cpp) | 281 | 120 (43%) | 142 | 19 | Fable 5: the native thread backend. Opus 5.5: log line output |
+| [src/ixx/auxid-containers.ixx](src/ixx/auxid-containers.ixx) | 3,266 | 2,772 (85%) | 153 | 341 | Fable 5: nearly all of `Error`, parts of `BasicString`. Opus 5.5: allocator handling in `BasicString`, `CompactVecBase`, `SlotMap` and the hash containers |
+| [src/ixx/auxid-core.ixx](src/ixx/auxid-core.ixx) | 557 | 476 (85%) | 30 | 51 | Fable 5: `ResultT`. Opus 5.5: `std::expected` guards, console output declarations |
+| [src/ixx/auxid-fs.ixx](src/ixx/auxid-fs.ixx) | 450 | 444 (99%) | 4 | 2 | Fable 5: small edits |
 | [src/ixx/auxid-memory.ixx](src/ixx/auxid-memory.ixx) | 861 | 565 (66%) | 14 | 282 | Opus 5.5: `AllocatorRef`, most of `ArenaAllocator`, the allocator handle concepts, assignment in `Arc` and `IntrusiveArc`. Fable 5: small edits |
-| [src/ixx/auxid-test.ixx](src/ixx/auxid-test.ixx) | 313 | 306 (98%) | 0 | 7 | Opus 5.5: printing |
+| [src/ixx/auxid-test.ixx](src/ixx/auxid-test.ixx) | 313 | 303 (97%) | 0 | 10 | Opus 5.5: printing |
 | [src/ixx/auxid-thread.ixx](src/ixx/auxid-thread.ixx) | 242 | 185 (76%) | 57 | 0 | Fable 5: `ThreadT`, `NativeThread` |
 | [src/ixx/auxid.ixx](src/ixx/auxid.ixx) | 11 | 6 (55%) | 5 | 0 | Fable 5: the OS layer exports |
 
@@ -129,6 +129,7 @@ Commits that only change this file are left out.
 
 | Commit | Date | Model | Author | Subject |
 | --- | --- | --- | --- | --- |
+| `c3d9329` | 2026-11-25 | Claude Opus 5.5 | Claude | [MAINTAIN]: Write Return Types Trailing |
 | `c1ae7a7` | 2026-11-24 | Claude Opus 5.5 | Claude | [CI]: Add tools/authorship_map.py And A Check That AI-Human-Map.md Is Current |
 | `e35f587` | 2026-11-24 | Claude Opus 5.5 | Claude | [MAINTAIN]: Rewrite README |
 | `9591d52` | 2026-11-24 | Claude Opus 5.5 | Claude | [DESIGN]: Lower The Minimum Standard From C++23 To C++20 |
