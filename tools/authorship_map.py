@@ -131,7 +131,7 @@ def blame(path, follow_copies):
         elif re.match(r"[0-9a-f]{40} \d+ \d+", line):
             commit = line[:40]
     start = 0
-    if lines and lines[0][1].startswith("#!"):
+    if lines and lines[0][1].startswith(("#!", "// auxid: trust-level")):
         start = 1
     if len(lines) > start and re.match(r"\s*(//|#)\s*Auxid: The Rigid", lines[start][1]):
         while start < len(lines) and re.match(r"\s*(//|#)", lines[start][1]):
