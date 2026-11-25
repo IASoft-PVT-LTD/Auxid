@@ -1,3 +1,4 @@
+// auxid: trust-level 1
 // Auxid: The Rigid C++ Platform.
 //
 // Copyright (C) 2026 I-A-S (ias@iasoft.dev)

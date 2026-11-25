@@ -1,3 +1,4 @@
+// auxid: trust-level 1
 // Auxid: The Rigid C++ Platform.
 //
 // Copyright (C) 2026 I-A-S (ias@iasoft.dev)
@@ -46,10 +47,15 @@ namespace au::detail
 
     auto alloc_baton(ThreadEntry_FuncT entry, void *arg) -> EntryBaton *
     {
-      auto *baton =
+      // SAFETY: alloc never returns null, and the size and alignment are those of EntryBaton.
+      AU_UNSAFE auto *baton =
           static_cast<EntryBaton *>(memory::HeapAllocator{}.alloc(sizeof(EntryBaton), alignof(EntryBaton)));
-      baton->entry = entry;
-      baton->arg = arg;
+      // SAFETY: the block just allocated; assigning starts the lifetime of these trivial members.
+      AU_UNSAFE
+      {
+        baton->entry = entry;
+        baton->arg = arg;
+      }
       return baton;
     }
 
@@ -57,14 +63,16 @@ namespace au::detail
     // HeapAllocator foreign-thread guarantee (D-006).
     auto consume_baton(void *raw) -> EntryBaton
     {
-      auto *baton = static_cast<EntryBaton *>(raw);
-      const EntryBaton local = *baton;
+      // SAFETY: raw is the baton from alloc_baton, passed through the OS unchanged.
+      AU_UNSAFE auto *baton = static_cast<EntryBaton *>(raw);
+      // SAFETY: only this thread holds the baton now, and it is freed after the copy.
+      AU_UNSAFE const EntryBaton local = *baton;
       memory::HeapAllocator{}.free(baton, sizeof(EntryBaton), alignof(EntryBaton));
       return local;
     }
 
 #if AU_PLATFORM_WINDOWS
-    unsigned __stdcall thread_entry_adapter(void *raw)
+    auto __stdcall thread_entry_adapter(void *raw) -> unsigned
     {
       const EntryBaton baton = consume_baton(raw);
       baton.entry(baton.arg);
@@ -87,7 +95,9 @@ namespace au::detail
     EntryBaton *baton = alloc_baton(entry, arg);
 
     unsigned int thread_id = 0;
-    const unsigned long long handle = ::_beginthreadex(nullptr, 0, &thread_entry_adapter, baton, 0, &thread_id);
+    // SAFETY: the adapter has the required signature and takes over baton, unless the call fails.
+    AU_UNSAFE const unsigned long long handle =
+        ::_beginthreadex(nullptr, 0, &thread_entry_adapter, baton, 0, &thread_id);
     if (handle == 0)
     {
       const int spawn_errno = errno;
@@ -95,14 +105,19 @@ namespace au::detail
       return fail(Error(ErrorDomain::Os, spawn_errno, String("thread spawn failed (_beginthreadex)")));
     }
 
-    return NativeThread{reinterpret_cast<void *>(handle), static_cast<u64>(thread_id)};
+    // SAFETY: _beginthreadex returns a HANDLE as an integer; it is only passed back to the OS.
+    AU_UNSAFE return NativeThread{reinterpret_cast<void *>(handle), static_cast<u64>(thread_id)};
   }
 
   AUXID_API auto join_native_thread(NativeThread &thread) -> void
   {
     constexpr unsigned long K_WAIT_INFINITE = 0xFFFFFFFFul;
-    ::WaitForSingleObject(thread.handle, K_WAIT_INFINITE);
-    ::CloseHandle(thread.handle);
+    // SAFETY: thread.handle is a joinable thread's handle; it is closed once, because thread is reset below.
+    AU_UNSAFE
+    {
+      ::WaitForSingleObject(thread.handle, K_WAIT_INFINITE);
+      ::CloseHandle(thread.handle);
+    }
     thread = NativeThread{};
   }
 
@@ -118,26 +133,31 @@ namespace au::detail
     EntryBaton *baton = alloc_baton(entry, arg);
 
     pthread_t handle{};
-    const int rc = ::pthread_create(&handle, nullptr, &thread_entry_adapter, baton);
+    // SAFETY: the adapter has the required signature and takes over baton, unless the call fails.
+    AU_UNSAFE const int rc = ::pthread_create(&handle, nullptr, &thread_entry_adapter, baton);
     if (rc != 0)
     {
       memory::HeapAllocator{}.free(baton, sizeof(EntryBaton), alignof(EntryBaton));
       return fail(Error(ErrorDomain::Os, rc, String("thread spawn failed (pthread_create)")));
     }
 
-    return NativeThread{reinterpret_cast<void *>(handle), static_cast<u64>(reinterpret_cast<std::uintptr_t>(
+    // SAFETY: pthread_t is an integer or a pointer, no wider than a pointer; the handle is only turned back into a
+    // pthread_t.
+    AU_UNSAFE return NativeThread{reinterpret_cast<void *>(handle), static_cast<u64>(reinterpret_cast<std::uintptr_t>(
                                                               reinterpret_cast<void *>(handle)))};
   }
 
   AUXID_API auto join_native_thread(NativeThread &thread) -> void
   {
-    ::pthread_join(reinterpret_cast<pthread_t>(thread.handle), nullptr);
+    // SAFETY: the handle came from pthread_create; it is joined once, because thread is reset below.
+    AU_UNSAFE ::pthread_join(reinterpret_cast<pthread_t>(thread.handle), nullptr);
     thread = NativeThread{};
   }
 
   AUXID_API auto current_native_thread_id() noexcept -> u64
   {
-    return static_cast<u64>(reinterpret_cast<std::uintptr_t>(reinterpret_cast<void *>(::pthread_self())));
+    // SAFETY: as in spawn_native_thread; the result is only an ID.
+    AU_UNSAFE return static_cast<u64>(reinterpret_cast<std::uintptr_t>(reinterpret_cast<void *>(::pthread_self())));
   }
 
 #endif
@@ -156,7 +176,8 @@ namespace au::auxid
   {
     RpmallocLifetime() noexcept
     {
-      rpmalloc_initialize(nullptr);
+      // SAFETY: a null memory interface selects the default one.
+      AU_UNSAFE rpmalloc_initialize(nullptr);
     }
 
     ~RpmallocLifetime()
@@ -269,7 +290,8 @@ namespace au::auxid
     auto &state = get_state();
     LockGuard<Mutex> lock(state.registry_mutex);
     const auto *data = state.thread_data.find(Thread::get_calling_thread_id());
-    return data != nullptr && data->init_counter > 0;
+    // SAFETY: find returns null or an entry that stays put while the registry is locked.
+    AU_UNSAFE return data != nullptr && data->init_counter > 0;
   }
 
   AUXID_API auto get_thread_logger() -> Logger &
@@ -277,9 +299,11 @@ namespace au::auxid
     auto &state = get_state();
     LockGuard<Mutex> lock(state.registry_mutex);
     auto *data = state.thread_data.find(Thread::get_calling_thread_id());
-    if (data == nullptr || !data->logger)
+    // SAFETY: find returns null or an entry that stays put while the registry is locked.
+    AU_UNSAFE if (data == nullptr || !data->logger)
       panic("get_thread_logger() on a thread with no guard (foreign threads have no logger)");
-    return *data->logger;
+    // SAFETY: checked above. The Logger is in its own allocation, so it outlives the lock; only this thread resets it.
+    AU_UNSAFE return *data->logger;
   }
 } // namespace au::auxid
 
