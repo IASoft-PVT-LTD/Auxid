@@ -82,24 +82,24 @@ namespace au
 {
   namespace internal
   {
-    inline int compare(const char *s1, const char *s2, usize n)
+    inline auto compare(const char *s1, const char *s2, usize n) -> int
     {
       if (n == 0)
         return 0;
       return compiler::memcmp(s1, s2, n);
     }
 
-    inline usize length(const char *s)
+    inline auto length(const char *s) -> usize
     {
       return compiler::strlen(s);
     }
 
-    inline const char *find(const char *p, usize n, char c)
+    inline auto find(const char *p, usize n, char c) -> const char *
     {
       return static_cast<const char *>(compiler::memchr(p, c, n));
     }
 
-    inline usize search_substring(const char *haystack, usize h_len, const char *needle, usize n_len, usize pos)
+    inline auto search_substring(const char *haystack, usize h_len, const char *needle, usize n_len, usize pos) -> usize
     {
       if (n_len == 0)
         return pos <= h_len ? pos : static_cast<usize>(-1);
@@ -165,72 +165,72 @@ public:
     using const_iterator = const char *;
     using reverse_iterator = std::reverse_iterator<const_iterator>;
 
-    constexpr char operator[](usize i) const
+    constexpr auto operator[](usize i) const -> char
     {
       return m_ptr[i];
     }
 
-    [[nodiscard]] constexpr const char *data() const
+    [[nodiscard]] constexpr auto data() const -> const char *
     {
       return m_ptr;
     }
 
-    [[nodiscard]] constexpr usize size() const
+    [[nodiscard]] constexpr auto size() const -> usize
     {
       return m_len;
     }
 
-    [[nodiscard]] constexpr bool empty() const
+    [[nodiscard]] constexpr auto empty() const -> bool
     {
       return m_len == 0;
     }
 
-    [[nodiscard]] constexpr iterator begin() const noexcept
+    [[nodiscard]] constexpr auto begin() const noexcept -> iterator
     {
       return m_ptr;
     }
 
-    [[nodiscard]] constexpr iterator end() const noexcept
+    [[nodiscard]] constexpr auto end() const noexcept -> iterator
     {
       return m_ptr + m_len;
     }
 
-    [[nodiscard]] constexpr const_iterator cbegin() const noexcept
+    [[nodiscard]] constexpr auto cbegin() const noexcept -> const_iterator
     {
       return begin();
     }
 
-    [[nodiscard]] constexpr const_iterator cend() const noexcept
+    [[nodiscard]] constexpr auto cend() const noexcept -> const_iterator
     {
       return end();
     }
 
-    [[nodiscard]] constexpr reverse_iterator rbegin() const noexcept
+    [[nodiscard]] constexpr auto rbegin() const noexcept -> reverse_iterator
     {
       return reverse_iterator(end());
     }
 
-    [[nodiscard]] constexpr reverse_iterator rend() const noexcept
+    [[nodiscard]] constexpr auto rend() const noexcept -> reverse_iterator
     {
       return reverse_iterator(begin());
     }
 
-    [[nodiscard]] constexpr reverse_iterator crbegin() const noexcept
+    [[nodiscard]] constexpr auto crbegin() const noexcept -> reverse_iterator
     {
       return rbegin();
     }
 
-    [[nodiscard]] constexpr reverse_iterator crend() const noexcept
+    [[nodiscard]] constexpr auto crend() const noexcept -> reverse_iterator
     {
       return rend();
     }
 
-    [[nodiscard]] constexpr char back() const
+    [[nodiscard]] constexpr auto back() const -> char
     {
       return m_ptr[m_len - 1];
     }
 
-    [[nodiscard]] usize find(char c, usize pos = 0) const
+    [[nodiscard]] auto find(char c, usize pos = 0) const -> usize
     {
       if (pos >= m_len)
         return npos;
@@ -238,17 +238,17 @@ public:
       return res ? static_cast<usize>(res - m_ptr) : npos;
     }
 
-    [[nodiscard]] usize find(StringView v, usize pos = 0) const
+    [[nodiscard]] auto find(StringView v, usize pos = 0) const -> usize
     {
       return internal::search_substring(m_ptr, m_len, v.data(), v.size(), pos);
     }
 
-    [[nodiscard]] usize find(const char *s, usize pos = 0) const
+    [[nodiscard]] auto find(const char *s, usize pos = 0) const -> usize
     {
       return find(StringView(s), pos);
     }
 
-    constexpr bool operator==(StringView other) const
+    constexpr auto operator==(StringView other) const -> bool
     {
       if (m_len != other.m_len)
         return false;
@@ -260,7 +260,7 @@ public:
       return containers::Span<const char>(m_ptr, m_len);
     }
 
-    [[nodiscard]] StringView substr(usize pos, usize count = npos) const
+    [[nodiscard]] auto substr(usize pos, usize count = npos) const -> StringView
     {
       if (pos >= m_len)
         return StringView();
@@ -268,14 +268,14 @@ public:
       return StringView(m_ptr + pos, rcount);
     }
 
-    [[nodiscard]] bool starts_with(StringView prefix) const
+    [[nodiscard]] auto starts_with(StringView prefix) const -> bool
     {
       if (prefix.size() > m_len)
         return false;
       return internal::compare(m_ptr, prefix.data(), prefix.size()) == 0;
     }
 
-    [[nodiscard]] bool ends_with(StringView suffix) const
+    [[nodiscard]] auto ends_with(StringView suffix) const -> bool
     {
       if (suffix.size() > m_len)
         return false;
@@ -283,7 +283,7 @@ public:
     }
   };
 
-  u64 hash_string_view(StringView sv)
+  auto hash_string_view(StringView sv) -> u64
   {
     return ::wyhash(sv.data(), sv.size(), 0, ::_wyp);
   }
@@ -352,42 +352,42 @@ private:
 
     AUXID_NO_UNIQUE_ADDRESS A m_allocator;
 
-    [[nodiscard]] bool is_short() const
+    [[nodiscard]] auto is_short() const -> bool
     {
       return !(m_storage.s.size_shifted & 1);
     }
 
-    [[nodiscard]] usize get_short_size() const
+    [[nodiscard]] auto get_short_size() const -> usize
     {
       return m_storage.s.size_shifted >> 1;
     }
 
-    void set_short_size(u8 size)
+    auto set_short_size(u8 size) -> void
     {
       m_storage.s.size_shifted = static_cast<u8>(size << 1);
     }
 
-    [[nodiscard]] char *get_data()
+    [[nodiscard]] auto get_data() -> char *
     {
       return is_short() ? m_storage.s.data : m_storage.l.ptr;
     }
 
-    [[nodiscard]] const char *get_data() const
+    [[nodiscard]] auto get_data() const -> const char *
     {
       return is_short() ? m_storage.s.data : m_storage.l.ptr;
     }
 
-    [[nodiscard]] usize get_size() const
+    [[nodiscard]] auto get_size() const -> usize
     {
       return is_short() ? get_short_size() : m_storage.l.size;
     }
 
-    [[nodiscard]] usize get_capacity() const
+    [[nodiscard]] auto get_capacity() const -> usize
     {
       return is_short() ? SSO_CAPACITY : (m_storage.l.cap_flagged >> 1);
     }
 
-    void set_long_capacity(usize cap)
+    auto set_long_capacity(usize cap) -> void
     {
       m_storage.l.cap_flagged = (cap << 1) | 1;
     }
@@ -452,7 +452,7 @@ public:
       other.m_storage.s.data[0] = '\0';
     }
 
-    BasicString &operator=(BasicString &&other) noexcept
+    auto operator=(BasicString &&other) noexcept -> BasicString &
     {
       if (this != &other)
       {
@@ -476,7 +476,7 @@ public:
     // takes it and copy assignment switches to it (releasing the old buffer
     // through the old allocator first). When both sides already share one
     // allocator the buffer is kept and reused.
-    BasicString &operator=(const BasicString &other)
+    auto operator=(const BasicString &other) -> BasicString &
     {
       if (this != &other)
       {
@@ -495,7 +495,7 @@ public:
       destroy();
     }
 
-    [[nodiscard]] BasicString clone() const
+    [[nodiscard]] auto clone() const -> BasicString
     {
       BasicString new_str(m_allocator);
       new_str.assign(StringView(get_data(), get_size()));
@@ -507,7 +507,7 @@ public:
       return m_allocator;
     }
 
-    void destroy()
+    auto destroy() -> void
     {
       if (!is_short())
       {
@@ -517,7 +517,7 @@ public:
       m_storage.s.data[0] = '\0';
     }
 
-    void reserve(usize new_cap)
+    auto reserve(usize new_cap) -> void
     {
       usize current_cap = get_capacity();
       if (new_cap <= current_cap)
@@ -567,7 +567,7 @@ public:
       }
     }
 
-    void assign(StringView sv)
+    auto assign(StringView sv) -> void
     {
       usize len = sv.size();
       if (len > get_capacity())
@@ -591,7 +591,7 @@ public:
       }
     }
 
-    void append(StringView sv)
+    auto append(StringView sv) -> void
     {
       if (sv.empty())
         return;
@@ -623,44 +623,44 @@ public:
     }
 
 public:
-    [[nodiscard]] const char *c_str() const
+    [[nodiscard]] auto c_str() const -> const char *
     {
       return get_data();
     }
 
-    [[nodiscard]] const char *data() const
+    [[nodiscard]] auto data() const -> const char *
     {
       return get_data();
     }
 
-    [[nodiscard]] char *data()
+    [[nodiscard]] auto data() -> char *
     {
       return get_data();
     }
 
-    [[nodiscard]] usize size() const
+    [[nodiscard]] auto size() const -> usize
     {
       return get_size();
     }
 
-    [[nodiscard]] usize length() const
+    [[nodiscard]] auto length() const -> usize
     {
       return get_size();
     }
 
-    [[nodiscard]] bool empty() const
+    [[nodiscard]] auto empty() const -> bool
     {
       return get_size() == 0;
     }
 
 public:
-    void push(char c)
+    auto push(char c) -> void
     {
       char tmp = c;
       append(StringView(&tmp, 1));
     }
 
-    void pop()
+    auto pop() -> void
     {
       const usize current_size = get_size();
 
@@ -681,7 +681,7 @@ public:
       }
     }
 
-    void push_back(char c)
+    auto push_back(char c) -> void
     {
       usize cur_len = get_size();
       if (cur_len >= get_capacity())
@@ -703,73 +703,73 @@ public:
       }
     }
 
-    void pop_back()
+    auto pop_back() -> void
     {
       pop();
     }
 
 public:
-    char *begin()
+    auto begin() -> char *
     {
       return get_data();
     }
 
-    char *end()
+    auto end() -> char *
     {
       return get_data() + get_size();
     }
 
-    [[nodiscard]] const char *begin() const
+    [[nodiscard]] auto begin() const -> const char *
     {
       return get_data();
     }
 
-    [[nodiscard]] const char *end() const
+    [[nodiscard]] auto end() const -> const char *
     {
       return get_data() + get_size();
     }
 
-    [[nodiscard]] const_iterator cbegin() const noexcept
+    [[nodiscard]] auto cbegin() const noexcept -> const_iterator
     {
       return begin();
     }
 
-    [[nodiscard]] const_iterator cend() const noexcept
+    [[nodiscard]] auto cend() const noexcept -> const_iterator
     {
       return end();
     }
 
-    [[nodiscard]] reverse_iterator rbegin() noexcept
+    [[nodiscard]] auto rbegin() noexcept -> reverse_iterator
     {
       return reverse_iterator(end());
     }
 
-    [[nodiscard]] reverse_iterator rend() noexcept
+    [[nodiscard]] auto rend() noexcept -> reverse_iterator
     {
       return reverse_iterator(begin());
     }
 
-    [[nodiscard]] const_reverse_iterator rbegin() const noexcept
+    [[nodiscard]] auto rbegin() const noexcept -> const_reverse_iterator
     {
       return const_reverse_iterator(end());
     }
 
-    [[nodiscard]] const_reverse_iterator rend() const noexcept
+    [[nodiscard]] auto rend() const noexcept -> const_reverse_iterator
     {
       return const_reverse_iterator(begin());
     }
 
-    [[nodiscard]] const_reverse_iterator crbegin() const noexcept
+    [[nodiscard]] auto crbegin() const noexcept -> const_reverse_iterator
     {
       return rbegin();
     }
 
-    [[nodiscard]] const_reverse_iterator crend() const noexcept
+    [[nodiscard]] auto crend() const noexcept -> const_reverse_iterator
     {
       return rend();
     }
 
-    [[nodiscard]] char &back()
+    [[nodiscard]] auto back() -> char &
     {
 #if !defined(NDEBUG)
       if (get_size() == 0)
@@ -778,7 +778,7 @@ public:
       return get_data()[get_size() - 1];
     }
 
-    [[nodiscard]] const char &back() const
+    [[nodiscard]] auto back() const -> const char &
     {
 #if !defined(NDEBUG)
       if (get_size() == 0)
@@ -802,23 +802,23 @@ public:
       return StringView(get_data(), get_size());
     }
 
-    [[nodiscard]] Span<const u8> as_bytes() const
+    [[nodiscard]] auto as_bytes() const -> Span<const u8>
     {
       auto bytes = std::as_bytes(Span<const char>(get_data(), get_size()));
       return Span<const u8>(reinterpret_cast<const u8 *>(bytes.data()), bytes.size());
     }
 
-    [[nodiscard]] usize find(char c, usize pos = 0) const
+    [[nodiscard]] auto find(char c, usize pos = 0) const -> usize
     {
       return StringView(get_data(), get_size()).find(c, pos);
     }
 
-    [[nodiscard]] usize find(StringView v, usize pos = 0) const
+    [[nodiscard]] auto find(StringView v, usize pos = 0) const -> usize
     {
       return StringView(get_data(), get_size()).find(v, pos);
     }
 
-    [[nodiscard]] usize find(const char *s, usize pos = 0) const
+    [[nodiscard]] auto find(const char *s, usize pos = 0) const -> usize
     {
       return StringView(get_data(), get_size()).find(StringView(s), pos);
     }
@@ -829,7 +829,7 @@ public:
     }
 
 public:
-    void clear()
+    auto clear() -> void
     {
       if (is_short())
         set_short_size(0);
@@ -839,7 +839,7 @@ public:
       get_data()[0] = '\0';
     }
 
-    [[nodiscard]] StringView substr(usize pos, usize count = npos) const
+    [[nodiscard]] auto substr(usize pos, usize count = npos) const -> StringView
     {
       return StringView(get_data(), get_size()).substr(pos, count);
     }
@@ -884,7 +884,7 @@ public:
     // std::format_error inside vformat_to, which under -fno-exceptions is a
     // process abort — treat runtime format strings as trusted (format()
     // validates at compile time; prefer it).
-    static BasicString vformat(StringView fmt, std::format_args args)
+    static auto vformat(StringView fmt, std::format_args args) -> BasicString
       requires std::default_initializable<A>
     {
       BasicString out;
@@ -893,7 +893,7 @@ public:
     }
 
     template<typename... Args>
-    static BasicString format(StringView fmt, Args &&...args)
+    static auto format(StringView fmt, Args &&...args) -> BasicString
       requires std::default_initializable<A>
     {
       auto converted = std::make_tuple(::au::detail::format_forward(args)...);
@@ -907,12 +907,12 @@ public:
 
 export namespace au
 {
-  constexpr bool operator==(StringView lhs, const char *rhs)
+  constexpr auto operator==(StringView lhs, const char *rhs) -> bool
   {
     return lhs == StringView(rhs);
   }
 
-  constexpr bool operator==(const char *lhs, StringView rhs)
+  constexpr auto operator==(const char *lhs, StringView rhs) -> bool
   {
     return StringView(lhs) == rhs;
   }
@@ -920,7 +920,7 @@ export namespace au
 
 export namespace au::containers
 {
-  template<class A1, class A2> inline bool operator==(const BasicString<A1> &lhs, const BasicString<A2> &rhs)
+  template<class A1, class A2> inline auto operator==(const BasicString<A1> &lhs, const BasicString<A2> &rhs) -> bool
   {
     if constexpr (std::is_same_v<A1, A2>)
     {
@@ -932,27 +932,27 @@ export namespace au::containers
     return StringView(lhs.data(), lhs.size()) == StringView(rhs.data(), rhs.size());
   }
 
-  template<class A> inline bool operator==(const BasicString<A> &lhs, StringView rhs)
+  template<class A> inline auto operator==(const BasicString<A> &lhs, StringView rhs) -> bool
   {
     return StringView(lhs.data(), lhs.size()) == rhs;
   }
 
-  template<class A> inline bool operator==(StringView lhs, const BasicString<A> &rhs)
+  template<class A> inline auto operator==(StringView lhs, const BasicString<A> &rhs) -> bool
   {
     return lhs == StringView(rhs.data(), rhs.size());
   }
 
-  template<class A> inline bool operator==(const BasicString<A> &lhs, const char *rhs)
+  template<class A> inline auto operator==(const BasicString<A> &lhs, const char *rhs) -> bool
   {
     return StringView(lhs.data(), lhs.size()) == StringView(rhs);
   }
 
-  template<class A> inline bool operator==(const char *lhs, const BasicString<A> &rhs)
+  template<class A> inline auto operator==(const char *lhs, const BasicString<A> &rhs) -> bool
   {
     return StringView(lhs) == StringView(rhs.data(), rhs.size());
   }
 
-  template<class A> inline BasicString<A> operator+(const BasicString<A> &lhs, StringView rhs)
+  template<class A> inline auto operator+(const BasicString<A> &lhs, StringView rhs) -> BasicString<A>
   {
     BasicString<A> result(lhs.get_allocator());
     result.reserve(lhs.size() + rhs.size());
@@ -961,7 +961,7 @@ export namespace au::containers
     return result;
   }
 
-  template<class A> inline BasicString<A> operator+(StringView lhs, const BasicString<A> &rhs)
+  template<class A> inline auto operator+(StringView lhs, const BasicString<A> &rhs) -> BasicString<A>
   {
     BasicString<A> result(rhs.get_allocator());
     result.reserve(lhs.size() + rhs.size());
@@ -970,7 +970,7 @@ export namespace au::containers
     return result;
   }
 
-  template<class A> inline BasicString<A> operator+(const BasicString<A> &lhs, const BasicString<A> &rhs)
+  template<class A> inline auto operator+(const BasicString<A> &lhs, const BasicString<A> &rhs) -> BasicString<A>
   {
     BasicString<A> result(lhs.get_allocator());
     result.reserve(lhs.size() + rhs.size());
@@ -979,17 +979,17 @@ export namespace au::containers
     return result;
   }
 
-  template<class A> inline BasicString<A> operator+(const char *lhs, const BasicString<A> &rhs)
+  template<class A> inline auto operator+(const char *lhs, const BasicString<A> &rhs) -> BasicString<A>
   {
     return StringView(lhs) + rhs;
   }
 
-  template<class A> inline BasicString<A> operator+(const BasicString<A> &lhs, const char *rhs)
+  template<class A> inline auto operator+(const BasicString<A> &lhs, const char *rhs) -> BasicString<A>
   {
     return lhs + StringView(rhs);
   }
 
-  template<class A> inline BasicString<A> operator+(const BasicString<A> &lhs, char rhs)
+  template<class A> inline auto operator+(const BasicString<A> &lhs, char rhs) -> BasicString<A>
   {
     BasicString<A> result(lhs.get_allocator());
     result.reserve(lhs.size() + 1);
@@ -1113,13 +1113,13 @@ public:
     constexpr ~Option() = default;
 
 public:
-    Option &operator=(NullOptType)
+    auto operator=(NullOptType) -> Option &
     {
       reset();
       return *this;
     }
 
-    Option &operator=(const Option &other)
+    auto operator=(const Option &other) -> Option &
     {
       if (this != &other)
       {
@@ -1143,7 +1143,7 @@ public:
       return *this;
     }
 
-    Option &operator=(Option &&other) noexcept
+    auto operator=(Option &&other) noexcept -> Option &
     {
       if (this != &other)
       {
@@ -1168,17 +1168,17 @@ public:
     }
 
 public:
-    [[nodiscard]] constexpr bool has_value() const
+    [[nodiscard]] constexpr auto has_value() const -> bool
     {
       return m_has_value;
     }
 
-    [[nodiscard]] constexpr bool is_some() const
+    [[nodiscard]] constexpr auto is_some() const -> bool
     {
       return m_has_value;
     }
 
-    [[nodiscard]] constexpr bool is_none() const
+    [[nodiscard]] constexpr auto is_none() const -> bool
     {
       return !m_has_value;
     }
@@ -1188,7 +1188,7 @@ public:
       return m_has_value;
     }
 
-    constexpr T &operator*() &
+    constexpr auto operator*() & -> T &
     {
 #if !defined(NDEBUG)
       if (!m_has_value)
@@ -1197,7 +1197,7 @@ public:
       return m_val;
     }
 
-    constexpr const T &operator*() const &
+    constexpr auto operator*() const & -> const T &
     {
 #if !defined(NDEBUG)
       if (!m_has_value)
@@ -1206,7 +1206,7 @@ public:
       return m_val;
     }
 
-    constexpr T *operator->()
+    constexpr auto operator->() -> T *
     {
 #if !defined(NDEBUG)
       if (!m_has_value)
@@ -1215,7 +1215,7 @@ public:
       return &m_val;
     }
 
-    constexpr const T *operator->() const
+    constexpr auto operator->() const -> const T *
     {
 #if !defined(NDEBUG)
       if (!m_has_value)
@@ -1224,40 +1224,40 @@ public:
       return &m_val;
     }
 
-    constexpr T &unwrap(std::source_location loc = std::source_location::current()) &
+    constexpr auto unwrap(std::source_location loc = std::source_location::current()) & -> T &
     {
       if (!m_has_value)
         panic("Called unwrap() on None Option", loc);
       return m_val;
     }
 
-    constexpr const T &unwrap(std::source_location loc = std::source_location::current()) const &
+    constexpr auto unwrap(std::source_location loc = std::source_location::current()) const & -> const T &
     {
       if (!m_has_value)
         panic("Called unwrap() on None Option", loc);
       return m_val;
     }
 
-    constexpr T unwrap(std::source_location loc = std::source_location::current()) &&
+    constexpr auto unwrap(std::source_location loc = std::source_location::current()) && -> T
     {
       if (!m_has_value)
         panic("Called unwrap() on None Option", loc);
       return std::move(m_val);
     }
 
-    constexpr T &expect(const char *msg, std::source_location loc = std::source_location::current()) &
+    constexpr auto expect(const char *msg, std::source_location loc = std::source_location::current()) & -> T &
     {
       if (!m_has_value)
         panic(msg, loc);
       return m_val;
     }
 
-    template<typename U> constexpr T value_or(U &&def) const &
+    template<typename U> constexpr auto value_or(U &&def) const & -> T
     {
       return m_has_value ? m_val : static_cast<T>(std::forward<U>(def));
     }
 
-    template<typename U> constexpr T value_or(U &&def) &&
+    template<typename U> constexpr auto value_or(U &&def) && -> T
     {
       return m_has_value ? std::move(m_val) : static_cast<T>(std::forward<U>(def));
     }
@@ -1272,7 +1272,7 @@ public:
     }
 
 public:
-    void reset()
+    auto reset() -> void
     {
       if (m_has_value)
       {
@@ -1910,21 +1910,21 @@ export namespace au::containers
 {
   inline constexpr u32 INDEX_INVALID = UINT32_MAX;
 
-  [[nodiscard]] u64 hash_bytes(const void *data, usize len, u64 seed = 0) noexcept
+  [[nodiscard]] auto hash_bytes(const void *data, usize len, u64 seed = 0) noexcept -> u64
   {
     return ::wyhash(data, len, seed, ::_wyp);
   }
 
   namespace detail
   {
-    [[nodiscard]] inline constexpr u64 int_mix(u64 x) noexcept
+    [[nodiscard]] inline constexpr auto int_mix(u64 x) noexcept -> u64
     {
       auto t = x * 11400714819323198485ULL;
       t ^= (t >> 32);
       return t;
     }
 
-    [[nodiscard]] inline u64 wymix(u64 a, u64 b) noexcept
+    [[nodiscard]] inline auto wymix(u64 a, u64 b) noexcept -> u64
     {
 #if defined(_MSC_VER) && defined(_M_X64)
       u64 hi = 0;
@@ -1958,12 +1958,12 @@ export namespace au::containers
     requires std::has_unique_object_representations_v<T> && (!std::is_pointer_v<T>)
   struct Hash<T>
   {
-    [[nodiscard]] u64 operator()(const T &val) const noexcept
+    [[nodiscard]] auto operator()(const T &val) const noexcept -> u64
     {
       return hash_bytes(&val, sizeof(T));
     }
 
-    [[nodiscard]] u64 operator()(const T &val, u64 seed) const noexcept
+    [[nodiscard]] auto operator()(const T &val, u64 seed) const noexcept -> u64
     {
       return hash_bytes(&val, sizeof(T), seed);
     }
@@ -1972,11 +1972,11 @@ export namespace au::containers
 #define AU_DEFINE_INT_HASH(T)                                                                                          \
   template<> struct Hash<T>                                                                                            \
   {                                                                                                                    \
-    [[nodiscard]] u64 operator()(T x) const noexcept                                                                   \
+    [[nodiscard]] auto operator()(T x) const noexcept -> u64                                                           \
     {                                                                                                                  \
       return detail::int_mix(static_cast<u64>(x));                                                                     \
     }                                                                                                                  \
-    [[nodiscard]] u64 operator()(T x, u64 seed) const noexcept                                                         \
+    [[nodiscard]] auto operator()(T x, u64 seed) const noexcept -> u64                                                 \
     {                                                                                                                  \
       return detail::int_mix(static_cast<u64>(x) ^ seed);                                                              \
     }                                                                                                                  \
@@ -1997,12 +1997,12 @@ export namespace au::containers
 
   template<typename T> struct Hash<T *>
   {
-    [[nodiscard]] u64 operator()(const T *p) const noexcept
+    [[nodiscard]] auto operator()(const T *p) const noexcept -> u64
     {
       return detail::int_mix(reinterpret_cast<uintptr_t>(p));
     }
 
-    [[nodiscard]] u64 operator()(const T *p, u64 seed) const noexcept
+    [[nodiscard]] auto operator()(const T *p, u64 seed) const noexcept -> u64
     {
       return detail::int_mix(reinterpret_cast<uintptr_t>(p) ^ seed);
     }
@@ -2012,22 +2012,22 @@ export namespace au::containers
   {
     using is_transparent = void;
 
-    [[nodiscard]] u64 operator()(StringView sv) const noexcept
+    [[nodiscard]] auto operator()(StringView sv) const noexcept -> u64
     {
       return hash_string_view(sv);
     }
 
-    [[nodiscard]] u64 operator()(const char *s) const noexcept
+    [[nodiscard]] auto operator()(const char *s) const noexcept -> u64
     {
       return hash_string_view(StringView(s));
     }
 
-    [[nodiscard]] u64 operator()(StringView sv, u64 seed) const noexcept
+    [[nodiscard]] auto operator()(StringView sv, u64 seed) const noexcept -> u64
     {
       return hash_bytes(sv.data(), sv.size(), seed);
     }
 
-    [[nodiscard]] u64 operator()(const char *s, u64 seed) const noexcept
+    [[nodiscard]] auto operator()(const char *s, u64 seed) const noexcept -> u64
     {
       const StringView sv(s);
       return hash_bytes(sv.data(), sv.size(), seed);
@@ -2038,22 +2038,22 @@ export namespace au::containers
   {
     using is_transparent = void;
 
-    [[nodiscard]] u64 operator()(StringView sv) const noexcept
+    [[nodiscard]] auto operator()(StringView sv) const noexcept -> u64
     {
       return hash_string_view(sv);
     }
 
-    [[nodiscard]] u64 operator()(const char *s) const noexcept
+    [[nodiscard]] auto operator()(const char *s) const noexcept -> u64
     {
       return hash_string_view(StringView(s));
     }
 
-    [[nodiscard]] u64 operator()(StringView sv, u64 seed) const noexcept
+    [[nodiscard]] auto operator()(StringView sv, u64 seed) const noexcept -> u64
     {
       return hash_bytes(sv.data(), sv.size(), seed);
     }
 
-    [[nodiscard]] u64 operator()(const char *s, u64 seed) const noexcept
+    [[nodiscard]] auto operator()(const char *s, u64 seed) const noexcept -> u64
     {
       const StringView sv(s);
       return hash_bytes(sv.data(), sv.size(), seed);
@@ -2062,12 +2062,12 @@ export namespace au::containers
 
   template<> struct Hash<const char *>
   {
-    [[nodiscard]] u64 operator()(const char *s) const noexcept
+    [[nodiscard]] auto operator()(const char *s) const noexcept -> u64
     {
       return hash_string_view(StringView(s));
     }
 
-    [[nodiscard]] u64 operator()(const char *s, u64 seed) const noexcept
+    [[nodiscard]] auto operator()(const char *s, u64 seed) const noexcept -> u64
     {
       const StringView sv(s);
       return hash_bytes(sv.data(), sv.size(), seed);
@@ -2076,7 +2076,7 @@ export namespace au::containers
 
   template<typename T> struct EqualTo
   {
-    constexpr bool operator()(const T &lhs, const T &rhs) const
+    constexpr auto operator()(const T &lhs, const T &rhs) const -> bool
     {
       return lhs == rhs;
     }
@@ -2086,7 +2086,7 @@ export namespace au::containers
   {
     using is_transparent = void;
 
-    constexpr bool operator()(StringView lhs, StringView rhs) const noexcept
+    constexpr auto operator()(StringView lhs, StringView rhs) const noexcept -> bool
     {
       return lhs == rhs;
     }
@@ -2096,18 +2096,18 @@ export namespace au::containers
   {
     using is_transparent = void;
 
-    constexpr bool operator()(StringView lhs, StringView rhs) const noexcept
+    constexpr auto operator()(StringView lhs, StringView rhs) const noexcept -> bool
     {
       return lhs == rhs;
     }
   };
 
-  [[nodiscard]] inline u64 hash_combine(u64 seed, u64 value) noexcept
+  [[nodiscard]] inline auto hash_combine(u64 seed, u64 value) noexcept -> u64
   {
     return seed ^ (detail::int_mix(value) + 0x9E3779B97F4A7C15ULL + (seed << 6) + (seed >> 2));
   }
 
-  template<typename It> [[nodiscard]] inline u64 hash_combine_range(u64 seed, It first, It last) noexcept
+  template<typename It> [[nodiscard]] inline auto hash_combine_range(u64 seed, It first, It last) noexcept -> u64
   {
     using value_type = std::remove_cvref_t<decltype(*first)>;
     Hash<value_type> hasher{};
@@ -2118,14 +2118,14 @@ export namespace au::containers
 
   template<typename K, typename V> struct Hash<Pair<K, V>>
   {
-    [[nodiscard]] u64 operator()(const Pair<K, V> &p) const noexcept
+    [[nodiscard]] auto operator()(const Pair<K, V> &p) const noexcept -> u64
     {
       const u64 h1 = Hash<K>{}(p.first);
       const u64 h2 = Hash<V>{}(p.second);
       return hash_combine(h1, h2);
     }
 
-    [[nodiscard]] u64 operator()(const Pair<K, V> &p, u64 seed) const noexcept
+    [[nodiscard]] auto operator()(const Pair<K, V> &p, u64 seed) const noexcept -> u64
     {
       const u64 h1 = Hash<K>{}(p.first, seed);
       const u64 h2 = Hash<V>{}(p.second, seed ^ 0xD6E8FEB86659FD93ULL);
@@ -2135,19 +2135,19 @@ export namespace au::containers
 
   template<typename... Ts> struct Hash<std::tuple<Ts...>>
   {
-    [[nodiscard]] u64 operator()(const std::tuple<Ts...> &t) const noexcept
+    [[nodiscard]] auto operator()(const std::tuple<Ts...> &t) const noexcept -> u64
     {
       return hash_impl(t, std::index_sequence_for<Ts...>{});
     }
 
-    [[nodiscard]] u64 operator()(const std::tuple<Ts...> &t, u64 seed) const noexcept
+    [[nodiscard]] auto operator()(const std::tuple<Ts...> &t, u64 seed) const noexcept -> u64
     {
       return hash_impl_seeded(t, seed, std::index_sequence_for<Ts...>{});
     }
 
 private:
     template<usize... Is>
-    [[nodiscard]] static u64 hash_impl(const std::tuple<Ts...> &t, std::index_sequence<Is...>) noexcept
+    [[nodiscard]] static auto hash_impl(const std::tuple<Ts...> &t, std::index_sequence<Is...>) noexcept -> u64
     {
       if constexpr (sizeof...(Ts) == 0)
         return 0;
@@ -2160,7 +2160,8 @@ private:
     }
 
     template<usize... Is>
-    [[nodiscard]] static u64 hash_impl_seeded(const std::tuple<Ts...> &t, u64 seed, std::index_sequence<Is...>) noexcept
+    [[nodiscard]] static auto hash_impl_seeded(const std::tuple<Ts...> &t, u64 seed,
+                                               std::index_sequence<Is...>) noexcept -> u64
     {
       if constexpr (sizeof...(Ts) == 0)
         return seed;
@@ -2175,12 +2176,12 @@ private:
 
   template<> struct Hash<Span<const u8>>
   {
-    [[nodiscard]] u64 operator()(Span<const u8> bytes) const noexcept
+    [[nodiscard]] auto operator()(Span<const u8> bytes) const noexcept -> u64
     {
       return hash_bytes(bytes.data(), bytes.size());
     }
 
-    [[nodiscard]] u64 operator()(Span<const u8> bytes, u64 seed) const noexcept
+    [[nodiscard]] auto operator()(Span<const u8> bytes, u64 seed) const noexcept -> u64
     {
       return hash_bytes(bytes.data(), bytes.size(), seed);
     }
@@ -2198,21 +2199,21 @@ namespace au::containers::swiss
   inline constexpr ctrl_t kDeleted = static_cast<ctrl_t>(0xFE);
   inline constexpr usize kGroupWidth = 16;
 
-  [[nodiscard]] inline constexpr bool is_full(ctrl_t c) noexcept
+  [[nodiscard]] inline constexpr auto is_full(ctrl_t c) noexcept -> bool
   {
     return (c & static_cast<ctrl_t>(0x80)) == 0;
   }
 
   // 7-bit fingerprint stored verbatim in the control array. The highest bit
   // is reserved for the empty/deleted markers.
-  [[nodiscard]] inline constexpr u8 h2(u64 hash) noexcept
+  [[nodiscard]] inline constexpr auto h2(u64 hash) noexcept -> u8
   {
     return static_cast<u8>(hash & 0x7Fu);
   }
 
   // Upper-57 bits seed the group probe; H2 sits in the lower 7 so attackers
   // controlling H2 alone do not control also the starting group.
-  [[nodiscard]] inline constexpr u64 h1(u64 hash) noexcept
+  [[nodiscard]] inline constexpr auto h1(u64 hash) noexcept -> u64
   {
     return hash >> 7;
   }
@@ -2230,17 +2231,17 @@ public:
       return m_mask != 0;
     }
 
-    [[nodiscard]] constexpr bool any() const noexcept
+    [[nodiscard]] constexpr auto any() const noexcept -> bool
     {
       return m_mask != 0;
     }
 
-    [[nodiscard]] constexpr u32 lowest() const noexcept
+    [[nodiscard]] constexpr auto lowest() const noexcept -> u32
     {
       return static_cast<u32>(std::countr_zero(m_mask));
     }
 
-    constexpr void clear_lowest() noexcept
+    constexpr auto clear_lowest() noexcept -> void
     {
       m_mask &= (m_mask - 1);
     }
@@ -2249,7 +2250,7 @@ public:
     {
       u32 m;
 
-      [[nodiscard]] constexpr u32 operator*() const noexcept
+      [[nodiscard]] constexpr auto operator*() const noexcept -> u32
       {
         return static_cast<u32>(std::countr_zero(m));
       }
@@ -2260,7 +2261,7 @@ public:
         return *this;
       }
 
-      [[nodiscard]] constexpr bool operator!=(const Iterator &other) const noexcept
+      [[nodiscard]] constexpr auto operator!=(const Iterator &other) const noexcept -> bool
       {
         return m != other.m;
       }
@@ -2289,21 +2290,21 @@ public:
     {
     }
 
-    [[nodiscard]] BitMask match(u8 needle) const noexcept
+    [[nodiscard]] auto match(u8 needle) const noexcept -> BitMask
     {
       const __m128i needle_vec = _mm_set1_epi8(static_cast<char>(needle));
       const __m128i eq = _mm_cmpeq_epi8(needle_vec, m_vec);
       return BitMask(static_cast<u32>(_mm_movemask_epi8(eq)) & 0xFFFFu);
     }
 
-    [[nodiscard]] BitMask match_empty() const noexcept
+    [[nodiscard]] auto match_empty() const noexcept -> BitMask
     {
       const __m128i needle_vec = _mm_set1_epi8(static_cast<char>(0x80));
       const __m128i eq = _mm_cmpeq_epi8(needle_vec, m_vec);
       return BitMask(static_cast<u32>(_mm_movemask_epi8(eq)) & 0xFFFFu);
     }
 
-    [[nodiscard]] BitMask match_empty_or_deleted() const noexcept
+    [[nodiscard]] auto match_empty_or_deleted() const noexcept -> BitMask
     {
       return BitMask(static_cast<u32>(_mm_movemask_epi8(m_vec)) & 0xFFFFu);
     }
@@ -2444,12 +2445,12 @@ private:
     {
     }
 
-    [[nodiscard]] constexpr usize offset() const noexcept
+    [[nodiscard]] constexpr auto offset() const noexcept -> usize
     {
       return group_index * kGroupWidth;
     }
 
-    constexpr void next() noexcept
+    constexpr auto next() noexcept -> void
     {
       ++step;
       group_index = (group_index + step) & n_groups_mask;
@@ -2583,7 +2584,7 @@ public:
       }
     }
 
-    HashTable &operator=(const HashTable &other)
+    auto operator=(const HashTable &other) -> HashTable &
     {
       if (this == &other)
         return *this;
@@ -2623,7 +2624,7 @@ public:
       other.m_tombstones = 0;
     }
 
-    HashTable &operator=(HashTable &&other) noexcept
+    auto operator=(HashTable &&other) noexcept -> HashTable &
     {
       if (this != &other)
       {
@@ -2647,7 +2648,7 @@ public:
       return *this;
     }
 
-    void reserve_at_least(size_type new_cap)
+    auto reserve_at_least(size_type new_cap) -> void
     {
       if (new_cap == 0)
         return;
@@ -2662,17 +2663,17 @@ public:
       rehash_to(new_slots);
     }
 
-    void reserve_exact(size_type new_cap)
+    auto reserve_exact(size_type new_cap) -> void
     {
       reserve_at_least(new_cap);
     }
 
-    void reserve(size_type new_cap)
+    auto reserve(size_type new_cap) -> void
     {
       reserve_at_least(new_cap);
     }
 
-    void clear()
+    auto clear() -> void
     {
       m_entries.clear();
       if (m_ctrl)
@@ -2680,7 +2681,7 @@ public:
       m_tombstones = 0;
     }
 
-    bool try_insert(Entry &&entry)
+    auto try_insert(Entry &&entry) -> bool
     {
       if (contains(m_key_of(entry)))
         return false;
@@ -2688,153 +2689,153 @@ public:
       return true;
     }
 
-    bool try_insert(const Entry &entry)
+    auto try_insert(const Entry &entry) -> bool
     {
       Entry copy = entry;
       return try_insert(std::move(copy));
     }
 
-    template<class Factory> Entry &find_or_emplace(const Key &key, Factory &&factory)
+    template<class Factory> auto find_or_emplace(const Key &key, Factory &&factory) -> Entry &
     {
       ensure_growth_room();
       return find_or_emplace_locked(key, std::forward<Factory>(factory));
     }
 
-    [[nodiscard]] Entry *find_entry(const Key &key)
+    [[nodiscard]] auto find_entry(const Key &key) -> Entry *
     {
       return find_entry_impl(key);
     }
 
-    [[nodiscard]] const Entry *find_entry(const Key &key) const
-    {
-      return find_entry_impl(key);
-    }
-
-    template<class K2>
-      requires TransparentLookup<Hasher, KeyEq, Key, K2>
-    [[nodiscard]] Entry *find_entry(const K2 &key)
+    [[nodiscard]] auto find_entry(const Key &key) const -> const Entry *
     {
       return find_entry_impl(key);
     }
 
     template<class K2>
       requires TransparentLookup<Hasher, KeyEq, Key, K2>
-    [[nodiscard]] const Entry *find_entry(const K2 &key) const
+    [[nodiscard]] auto find_entry(const K2 &key) -> Entry *
     {
       return find_entry_impl(key);
     }
 
-    [[nodiscard]] bool contains(const Key &key) const
+    template<class K2>
+      requires TransparentLookup<Hasher, KeyEq, Key, K2>
+    [[nodiscard]] auto find_entry(const K2 &key) const -> const Entry *
+    {
+      return find_entry_impl(key);
+    }
+
+    [[nodiscard]] auto contains(const Key &key) const -> bool
     {
       return find_entry(key) != nullptr;
     }
 
     template<class K2>
       requires TransparentLookup<Hasher, KeyEq, Key, K2>
-    [[nodiscard]] bool contains(const K2 &key) const
+    [[nodiscard]] auto contains(const K2 &key) const -> bool
     {
       return find_entry(key) != nullptr;
     }
 
-    bool erase(const Key &key)
+    auto erase(const Key &key) -> bool
     {
       return erase_impl(key);
     }
 
     template<class K2>
       requires TransparentLookup<Hasher, KeyEq, Key, K2>
-    bool erase(const K2 &key)
+    auto erase(const K2 &key) -> bool
     {
       return erase_impl(key);
     }
 
-    [[nodiscard]] iterator begin() noexcept
+    [[nodiscard]] auto begin() noexcept -> iterator
     {
       return m_entries.begin();
     }
 
-    [[nodiscard]] iterator end() noexcept
+    [[nodiscard]] auto end() noexcept -> iterator
     {
       return m_entries.end();
     }
 
-    [[nodiscard]] const_iterator begin() const noexcept
+    [[nodiscard]] auto begin() const noexcept -> const_iterator
     {
       return m_entries.begin();
     }
 
-    [[nodiscard]] const_iterator end() const noexcept
+    [[nodiscard]] auto end() const noexcept -> const_iterator
     {
       return m_entries.end();
     }
 
-    [[nodiscard]] const_iterator cbegin() const noexcept
+    [[nodiscard]] auto cbegin() const noexcept -> const_iterator
     {
       return begin();
     }
 
-    [[nodiscard]] const_iterator cend() const noexcept
+    [[nodiscard]] auto cend() const noexcept -> const_iterator
     {
       return end();
     }
 
-    [[nodiscard]] reverse_iterator rbegin() noexcept
+    [[nodiscard]] auto rbegin() noexcept -> reverse_iterator
     {
       return reverse_iterator(end());
     }
 
-    [[nodiscard]] reverse_iterator rend() noexcept
+    [[nodiscard]] auto rend() noexcept -> reverse_iterator
     {
       return reverse_iterator(begin());
     }
 
-    [[nodiscard]] const_reverse_iterator rbegin() const noexcept
+    [[nodiscard]] auto rbegin() const noexcept -> const_reverse_iterator
     {
       return const_reverse_iterator(end());
     }
 
-    [[nodiscard]] const_reverse_iterator rend() const noexcept
+    [[nodiscard]] auto rend() const noexcept -> const_reverse_iterator
     {
       return const_reverse_iterator(begin());
     }
 
-    [[nodiscard]] const_reverse_iterator crbegin() const noexcept
+    [[nodiscard]] auto crbegin() const noexcept -> const_reverse_iterator
     {
       return rbegin();
     }
 
-    [[nodiscard]] const_reverse_iterator crend() const noexcept
+    [[nodiscard]] auto crend() const noexcept -> const_reverse_iterator
     {
       return rend();
     }
 
-    [[nodiscard]] size_type size() const noexcept
+    [[nodiscard]] auto size() const noexcept -> size_type
     {
       return m_entries.size();
     }
 
-    [[nodiscard]] bool empty() const noexcept
+    [[nodiscard]] auto empty() const noexcept -> bool
     {
       return m_entries.empty();
     }
 
-    [[nodiscard]] u64 seed() const noexcept
+    [[nodiscard]] auto seed() const noexcept -> u64
     {
       return m_seed;
     }
 
-    [[nodiscard]] size_type capacity_slots() const noexcept
+    [[nodiscard]] auto capacity_slots() const noexcept -> size_type
     {
       return m_capacity;
     }
 
-    [[nodiscard]] size_type tombstones() const noexcept
+    [[nodiscard]] auto tombstones() const noexcept -> size_type
     {
       return m_tombstones;
     }
 
 private:
-    template<class K> [[nodiscard]] u64 hash_key(const K &key) const noexcept
+    template<class K> [[nodiscard]] auto hash_key(const K &key) const noexcept -> u64
     {
       if constexpr (SeedableHasher<Hasher, K>)
         return m_hasher(key, m_seed);
@@ -2842,19 +2843,19 @@ private:
         return detail::wymix(m_hasher(key), m_seed ^ 0xBF58476D1CE4E5B9ULL);
     }
 
-    [[nodiscard]] static size_type max_load_for(size_type n_slots) noexcept
+    [[nodiscard]] static auto max_load_for(size_type n_slots) noexcept -> size_type
     {
       return n_slots - (n_slots / 8);
     }
 
-    [[nodiscard]] bool has_room_for_one() const noexcept
+    [[nodiscard]] auto has_room_for_one() const noexcept -> bool
     {
       if (m_capacity == 0)
         return false;
       return (m_entries.size() + m_tombstones) < max_load_for(m_capacity);
     }
 
-    void ensure_growth_room()
+    auto ensure_growth_room() -> void
     {
       if (has_room_for_one())
         return;
@@ -2869,7 +2870,7 @@ private:
         rehash_to(m_capacity * 2);
     }
 
-    void allocate_buffer(size_type n_slots)
+    auto allocate_buffer(size_type n_slots) -> void
     {
       const size_type ctrl_bytes = n_slots * sizeof(ctrl_t);
       constexpr size_type idx_align = alignof(u32);
@@ -2887,7 +2888,7 @@ private:
       m_tombstones = 0;
     }
 
-    void free_buffer() noexcept
+    auto free_buffer() noexcept -> void
     {
       if (!m_ctrl)
         return;
@@ -2905,7 +2906,7 @@ private:
       m_tombstones = 0;
     }
 
-    void rehash_to(size_type new_n_slots)
+    auto rehash_to(size_type new_n_slots) -> void
     {
       free_buffer();
       allocate_buffer(new_n_slots);
@@ -2913,7 +2914,7 @@ private:
         place_unique(i);
     }
 
-    void drop_deleted_in_place()
+    auto drop_deleted_in_place() -> void
     {
       if (m_capacity == 0)
         return;
@@ -2923,7 +2924,7 @@ private:
         place_unique(i);
     }
 
-    void place_unique(u32 entry_idx) noexcept
+    auto place_unique(u32 entry_idx) noexcept -> void
     {
       const auto &key = m_key_of(m_entries[entry_idx]);
       const u64 h = hash_key(key);
@@ -2943,7 +2944,7 @@ private:
       }
     }
 
-    void insert_unique(Entry &&entry)
+    auto insert_unique(Entry &&entry) -> void
     {
       ensure_growth_room();
       const u32 entry_idx = static_cast<u32>(m_entries.size());
@@ -2951,7 +2952,7 @@ private:
       place_unique(entry_idx);
     }
 
-    template<class Factory> Entry &find_or_emplace_locked(const Key &key, Factory &&factory)
+    template<class Factory> auto find_or_emplace_locked(const Key &key, Factory &&factory) -> Entry &
     {
       const u64 h = hash_key(key);
       const u8 h2v = swiss::h2(h);
@@ -3001,7 +3002,7 @@ private:
       panic("HashTable::find_or_emplace: probe sequence exhausted");
     }
 
-    template<class K> [[nodiscard]] Entry *find_entry_impl(const K &key) const
+    template<class K> [[nodiscard]] auto find_entry_impl(const K &key) const -> Entry *
     {
       if (m_capacity == 0)
         return nullptr;
@@ -3026,7 +3027,7 @@ private:
       return nullptr;
     }
 
-    template<class K> bool erase_impl(const K &key)
+    template<class K> auto erase_impl(const K &key) -> bool
     {
       if (m_capacity == 0)
         return false;
@@ -3064,7 +3065,7 @@ private:
       return false;
     }
 
-    template<class K> void relocate_index(const K &key, u32 old_idx, u32 new_idx) noexcept
+    template<class K> auto relocate_index(const K &key, u32 old_idx, u32 new_idx) noexcept -> void
     {
       const u64 h = hash_key(key);
       const u8 h2v = swiss::h2(h);
@@ -3144,61 +3145,53 @@ public:
       return m_table.get_allocator();
     }
 
-    [[nodiscard]] u64 seed() const noexcept
+    [[nodiscard]] auto seed() const noexcept -> u64
     {
       return m_table.seed();
     }
 
-    void reserve_at_least(size_type new_cap)
+    auto reserve_at_least(size_type new_cap) -> void
     {
       m_table.reserve_at_least(new_cap);
     }
 
-    void reserve_exact(size_type new_cap)
+    auto reserve_exact(size_type new_cap) -> void
     {
       m_table.reserve_exact(new_cap);
     }
 
-    void reserve(size_type new_cap)
+    auto reserve(size_type new_cap) -> void
     {
       m_table.reserve(new_cap);
     }
 
-    void clear()
+    auto clear() -> void
     {
       m_table.clear();
     }
 
-    V &operator[](const K &key)
+    auto operator[](const K &key) -> V &
     {
       return m_table.find_or_emplace(key, [&key]() { return value_type{key, V{}}; }).second;
     }
 
-    bool insert(const K &key, const V &val)
+    auto insert(const K &key, const V &val) -> bool
     {
       return m_table.try_insert(value_type{key, val});
     }
 
-    bool insert(const K &key, V &&val)
+    auto insert(const K &key, V &&val) -> bool
     {
       return m_table.try_insert(value_type{key, std::move(val)});
     }
 
-    [[nodiscard]] V *find(const K &key)
+    [[nodiscard]] auto find(const K &key) -> V *
     {
       auto *entry = m_table.find_entry(key);
       return entry ? &entry->second : nullptr;
     }
 
-    [[nodiscard]] const V *find(const K &key) const
-    {
-      auto *entry = m_table.find_entry(key);
-      return entry ? &entry->second : nullptr;
-    }
-
-    template<class K2>
-      requires TransparentLookup<Hasher, KeyEq, K, K2>
-    [[nodiscard]] V *find(const K2 &key)
+    [[nodiscard]] auto find(const K &key) const -> const V *
     {
       auto *entry = m_table.find_entry(key);
       return entry ? &entry->second : nullptr;
@@ -3206,102 +3199,110 @@ public:
 
     template<class K2>
       requires TransparentLookup<Hasher, KeyEq, K, K2>
-    [[nodiscard]] const V *find(const K2 &key) const
+    [[nodiscard]] auto find(const K2 &key) -> V *
     {
       auto *entry = m_table.find_entry(key);
       return entry ? &entry->second : nullptr;
     }
 
-    [[nodiscard]] bool contains(const K &key) const
+    template<class K2>
+      requires TransparentLookup<Hasher, KeyEq, K, K2>
+    [[nodiscard]] auto find(const K2 &key) const -> const V *
+    {
+      auto *entry = m_table.find_entry(key);
+      return entry ? &entry->second : nullptr;
+    }
+
+    [[nodiscard]] auto contains(const K &key) const -> bool
     {
       return m_table.contains(key);
     }
 
     template<class K2>
       requires TransparentLookup<Hasher, KeyEq, K, K2>
-    [[nodiscard]] bool contains(const K2 &key) const
+    [[nodiscard]] auto contains(const K2 &key) const -> bool
     {
       return m_table.contains(key);
     }
 
-    bool erase(const K &key)
+    auto erase(const K &key) -> bool
     {
       return m_table.erase(key);
     }
 
     template<class K2>
       requires TransparentLookup<Hasher, KeyEq, K, K2>
-    bool erase(const K2 &key)
+    auto erase(const K2 &key) -> bool
     {
       return m_table.erase(key);
     }
 
-    [[nodiscard]] iterator begin() noexcept
+    [[nodiscard]] auto begin() noexcept -> iterator
     {
       return m_table.begin();
     }
 
-    [[nodiscard]] iterator end() noexcept
+    [[nodiscard]] auto end() noexcept -> iterator
     {
       return m_table.end();
     }
 
-    [[nodiscard]] const_iterator begin() const noexcept
+    [[nodiscard]] auto begin() const noexcept -> const_iterator
     {
       return m_table.begin();
     }
 
-    [[nodiscard]] const_iterator end() const noexcept
+    [[nodiscard]] auto end() const noexcept -> const_iterator
     {
       return m_table.end();
     }
 
-    [[nodiscard]] const_iterator cbegin() const noexcept
+    [[nodiscard]] auto cbegin() const noexcept -> const_iterator
     {
       return m_table.cbegin();
     }
 
-    [[nodiscard]] const_iterator cend() const noexcept
+    [[nodiscard]] auto cend() const noexcept -> const_iterator
     {
       return m_table.cend();
     }
 
-    [[nodiscard]] reverse_iterator rbegin() noexcept
+    [[nodiscard]] auto rbegin() noexcept -> reverse_iterator
     {
       return m_table.rbegin();
     }
 
-    [[nodiscard]] reverse_iterator rend() noexcept
+    [[nodiscard]] auto rend() noexcept -> reverse_iterator
     {
       return m_table.rend();
     }
 
-    [[nodiscard]] const_reverse_iterator rbegin() const noexcept
+    [[nodiscard]] auto rbegin() const noexcept -> const_reverse_iterator
     {
       return m_table.rbegin();
     }
 
-    [[nodiscard]] const_reverse_iterator rend() const noexcept
+    [[nodiscard]] auto rend() const noexcept -> const_reverse_iterator
     {
       return m_table.rend();
     }
 
-    [[nodiscard]] const_reverse_iterator crbegin() const noexcept
+    [[nodiscard]] auto crbegin() const noexcept -> const_reverse_iterator
     {
       return m_table.crbegin();
     }
 
-    [[nodiscard]] const_reverse_iterator crend() const noexcept
+    [[nodiscard]] auto crend() const noexcept -> const_reverse_iterator
     {
       return m_table.crend();
     }
 
-    [[nodiscard]] size_type size() const noexcept
+    [[nodiscard]] auto size() const noexcept -> size_type
     {
       return m_table.size();
     }
 
-    [[nodiscard]] bool empty() const noexcept
+    [[nodiscard]] auto empty() const noexcept -> bool
     {
       return m_table.empty();
     }
@@ -3360,131 +3361,131 @@ public:
       return m_table.get_allocator();
     }
 
-    [[nodiscard]] u64 seed() const noexcept
+    [[nodiscard]] auto seed() const noexcept -> u64
     {
       return m_table.seed();
     }
 
-    void reserve_at_least(size_type new_cap)
+    auto reserve_at_least(size_type new_cap) -> void
     {
       m_table.reserve_at_least(new_cap);
     }
 
-    void reserve_exact(size_type new_cap)
+    auto reserve_exact(size_type new_cap) -> void
     {
       m_table.reserve_exact(new_cap);
     }
 
-    void reserve(size_type new_cap)
+    auto reserve(size_type new_cap) -> void
     {
       m_table.reserve(new_cap);
     }
 
-    void clear()
+    auto clear() -> void
     {
       m_table.clear();
     }
 
-    bool insert(const K &key)
+    auto insert(const K &key) -> bool
     {
       return m_table.try_insert(K{key});
     }
 
-    bool insert(K &&key)
+    auto insert(K &&key) -> bool
     {
       return m_table.try_insert(std::move(key));
     }
 
-    [[nodiscard]] bool contains(const K &key) const
+    [[nodiscard]] auto contains(const K &key) const -> bool
     {
       return m_table.contains(key);
     }
 
     template<class K2>
       requires TransparentLookup<Hasher, KeyEq, K, K2>
-    [[nodiscard]] bool contains(const K2 &key) const
+    [[nodiscard]] auto contains(const K2 &key) const -> bool
     {
       return m_table.contains(key);
     }
 
-    bool erase(const K &key)
+    auto erase(const K &key) -> bool
     {
       return m_table.erase(key);
     }
 
     template<class K2>
       requires TransparentLookup<Hasher, KeyEq, K, K2>
-    bool erase(const K2 &key)
+    auto erase(const K2 &key) -> bool
     {
       return m_table.erase(key);
     }
 
-    [[nodiscard]] iterator begin() noexcept
+    [[nodiscard]] auto begin() noexcept -> iterator
     {
       return m_table.begin();
     }
 
-    [[nodiscard]] iterator end() noexcept
+    [[nodiscard]] auto end() noexcept -> iterator
     {
       return m_table.end();
     }
 
-    [[nodiscard]] const_iterator begin() const noexcept
+    [[nodiscard]] auto begin() const noexcept -> const_iterator
     {
       return m_table.begin();
     }
 
-    [[nodiscard]] const_iterator end() const noexcept
+    [[nodiscard]] auto end() const noexcept -> const_iterator
     {
       return m_table.end();
     }
 
-    [[nodiscard]] const_iterator cbegin() const noexcept
+    [[nodiscard]] auto cbegin() const noexcept -> const_iterator
     {
       return m_table.cbegin();
     }
 
-    [[nodiscard]] const_iterator cend() const noexcept
+    [[nodiscard]] auto cend() const noexcept -> const_iterator
     {
       return m_table.cend();
     }
 
-    [[nodiscard]] reverse_iterator rbegin() noexcept
+    [[nodiscard]] auto rbegin() noexcept -> reverse_iterator
     {
       return m_table.rbegin();
     }
 
-    [[nodiscard]] reverse_iterator rend() noexcept
+    [[nodiscard]] auto rend() noexcept -> reverse_iterator
     {
       return m_table.rend();
     }
 
-    [[nodiscard]] const_reverse_iterator rbegin() const noexcept
+    [[nodiscard]] auto rbegin() const noexcept -> const_reverse_iterator
     {
       return m_table.rbegin();
     }
 
-    [[nodiscard]] const_reverse_iterator rend() const noexcept
+    [[nodiscard]] auto rend() const noexcept -> const_reverse_iterator
     {
       return m_table.rend();
     }
 
-    [[nodiscard]] const_reverse_iterator crbegin() const noexcept
+    [[nodiscard]] auto crbegin() const noexcept -> const_reverse_iterator
     {
       return m_table.crbegin();
     }
 
-    [[nodiscard]] const_reverse_iterator crend() const noexcept
+    [[nodiscard]] auto crend() const noexcept -> const_reverse_iterator
     {
       return m_table.crend();
     }
 
-    [[nodiscard]] size_type size() const noexcept
+    [[nodiscard]] auto size() const noexcept -> size_type
     {
       return m_table.size();
     }
 
-    [[nodiscard]] bool empty() const noexcept
+    [[nodiscard]] auto empty() const noexcept -> bool
     {
       return m_table.empty();
     }
@@ -3509,7 +3510,7 @@ public:
       u32 idx;
       u32 gen;
 
-      [[nodiscard]] constexpr bool operator==(const Key &other) const noexcept
+      [[nodiscard]] constexpr auto operator==(const Key &other) const noexcept -> bool
       {
         return idx == other.idx && gen == other.gen;
       }
@@ -3742,9 +3743,9 @@ public:
     }
 
     SpscQueue(const SpscQueue &) = delete;
-    SpscQueue &operator=(const SpscQueue &) = delete;
+    auto operator=(const SpscQueue &) -> SpscQueue & = delete;
 
-    [[nodiscard]] bool push(T value)
+    [[nodiscard]] auto push(T value) -> bool
     {
       const usize write_idx = m_write_pos.load(std::memory_order_relaxed);
 
@@ -3761,7 +3762,7 @@ public:
       return true;
     }
 
-    [[nodiscard]] bool pop(T &out_value)
+    [[nodiscard]] auto pop(T &out_value) -> bool
     {
       const usize read_idx = m_read_pos.load(std::memory_order_relaxed);
 

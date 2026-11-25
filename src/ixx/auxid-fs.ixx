@@ -65,12 +65,12 @@ namespace au::filesystem::_internal
     return ret;
   }
 
-  inline void directory_iterator_advance(DirectoryIterator &it, std::error_code &ec)
+  inline auto directory_iterator_advance(DirectoryIterator &it, std::error_code &ec) -> void
   {
     it.increment(ec);
   }
 
-  inline void recursive_directory_iterator_advance(RecursiveDirectoryIterator &it, std::error_code &ec)
+  inline auto recursive_directory_iterator_advance(RecursiveDirectoryIterator &it, std::error_code &ec) -> void
   {
     it.increment(ec);
   }
