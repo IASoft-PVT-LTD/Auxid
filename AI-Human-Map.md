@@ -10,27 +10,27 @@ The OS layer is `auxid.time`, `auxid.env`, `auxid.ipc`, `auxid.proc`, `auxid.dl`
 
 | | Human | Claude Fable 5 | Claude Opus 5.5 | All AI |
 | --- | --- | --- | --- | --- |
-| Whole repository, 15,338 lines | **66.1%** | 22.1% | 11.9% | **33.9%** |
-| Library only, 8,538 lines | **59.6%** | 30.8% | 9.5% | **40.4%** |
-| Library without the OS layer, 6,323 lines | **80.4%** | 6.8% | 12.8% | **19.6%** |
-| AI commits | | 19 | 9 | 28 |
+| Whole repository, 15,397 lines | **65.8%** | 21.8% | 12.4% | **34.2%** |
+| Library only, 8,597 lines | **59.2%** | 30.3% | 10.4% | **40.8%** |
+| Library without the OS layer, 6,346 lines | **80.1%** | 6.8% | 13.1% | **19.9%** |
+| AI commits | | 19 | 11 | 30 |
 
 The first commit marked as AI is from 2026-08-26. Percentages are rounded and may not add up to exactly 100.
 
-These numbers follow moved and copied lines back to their source. Without that, AI is 35.3% of the repository instead of 33.9%.
+These numbers follow moved and copied lines back to their source. Without that, AI is 35.6% of the repository instead of 34.2%.
 
 ## By area
 
 | Area | Lines | Human | Claude Fable 5 | Claude Opus 5.5 | Files with no AI code commits |
 | --- | --- | --- | --- | --- | --- |
-| Library, without the OS layer | 6,323 | 5,083 (80.4%) | 430 (6.8%) | 810 (12.8%) | 1 of 13 |
-| OS layer | 2,215 | 8 (0.4%) | 2,202 (99.4%) | 5 (0.2%) | 0 of 11 |
+| Library, without the OS layer | 6,346 | 5,083 (80.1%) | 430 (6.8%) | 833 (13.1%) | 1 of 13 |
+| OS layer | 2,251 | 8 (0.4%) | 2,178 (96.8%) | 65 (2.9%) | 0 of 11 |
 | Tests | 2,606 | 1,377 (52.8%) | 602 (23.1%) | 627 (24.1%) | 11 of 23 |
 | Benchmarks | 1,677 | 1,677 (100.0%) | 0 (0.0%) | 0 (0.0%) | 10 of 11 |
 | Build files and presets | 1,358 | 1,325 (97.6%) | 27 (2.0%) | 6 (0.4%) | 19 of 23 |
 | CI, tools and config | 900 | 628 (69.8%) | 0 (0.0%) | 272 (30.2%) | 7 of 9 |
 | README and docs | 259 | 34 (13.1%) | 124 (47.9%) | 101 (39.0%) | 0 of 2 |
-| **Total** | 15,338 | 10,132 (66.1%) | 3,385 (22.1%) | 1,821 (11.9%) | 48 of 92 |
+| **Total** | 15,397 | 10,132 (65.8%) | 3,361 (21.8%) | 1,904 (12.4%) | 48 of 92 |
 
 ## Files with AI-written lines
 
@@ -40,9 +40,9 @@ Each count is the number of lines that survive today. The few human lines in fil
 
 | File | Lines | Human | Claude Fable 5 | Claude Opus 5.5 | What the AI wrote |
 | --- | --- | --- | --- | --- | --- |
-| [include/auxid/macros.hpp](include/auxid/macros.hpp) | 110 | 93 (85%) | 11 | 6 | Fable 5: function attributes. Opus 5.5: C++20 check, `<utility>` include |
+| [include/auxid/macros.hpp](include/auxid/macros.hpp) | 119 | 93 (78%) | 11 | 15 | Fable 5: function attributes. Opus 5.5: C++20 check, `<utility>` include, `AU_UNSAFE` |
 | [src/cpp/auxid-containers.cpp](src/cpp/auxid-containers.cpp) | 39 | 25 (64%) | 14 | 0 | Fable 5: `Error::os_last` |
-| [src/cpp/auxid-core.cpp](src/cpp/auxid-core.cpp) | 109 | 24 (22%) | 0 | 85 | Opus 5.5: console output, panic printing |
+| [src/cpp/auxid-core.cpp](src/cpp/auxid-core.cpp) | 123 | 24 (20%) | 0 | 99 | Opus 5.5: console output, panic printing, SAFETY comments |
 | [src/cpp/auxid-test.cpp](src/cpp/auxid-test.cpp) | 68 | 54 (79%) | 0 | 14 | Opus 5.5: printing |
 | [src/cpp/auxid-thread.cpp](src/cpp/auxid-thread.cpp) | 281 | 120 (43%) | 142 | 19 | Fable 5: the native thread backend. Opus 5.5: log line output |
 | [src/ixx/auxid-containers.ixx](src/ixx/auxid-containers.ixx) | 3,266 | 2,772 (85%) | 153 | 341 | Fable 5: nearly all of `Error`, parts of `BasicString`. Opus 5.5: allocator handling in `BasicString`, `CompactVecBase`, `SlotMap` and the hash containers |
@@ -57,13 +57,13 @@ Each count is the number of lines that survive today. The few human lines in fil
 
 | File | Lines | Human | Claude Fable 5 | Claude Opus 5.5 |
 | --- | --- | --- | --- | --- |
-| [src/cpp/auxid-dl.cpp](src/cpp/auxid-dl.cpp) | 102 | 2 (2%) | 100 | 0 |
-| [src/cpp/auxid-env.cpp](src/cpp/auxid-env.cpp) | 330 | 0 (0%) | 330 | 0 |
+| [src/cpp/auxid-dl.cpp](src/cpp/auxid-dl.cpp) | 110 | 2 (2%) | 94 | 14 |
+| [src/cpp/auxid-env.cpp](src/cpp/auxid-env.cpp) | 357 | 0 (0%) | 313 | 44 |
 | [src/cpp/auxid-ipc.cpp](src/cpp/auxid-ipc.cpp) | 542 | 2 (0%) | 540 | 0 |
 | [src/cpp/auxid-proc.cpp](src/cpp/auxid-proc.cpp) | 529 | 2 (0%) | 527 | 0 |
 | [src/cpp/auxid-time.cpp](src/cpp/auxid-time.cpp) | 24 | 0 (0%) | 24 | 0 |
 | [src/hpp/auxid_win32.hpp](src/hpp/auxid_win32.hpp) | 166 | 0 (0%) | 161 | 5 |
-| [src/ixx/auxid-dl.ixx](src/ixx/auxid-dl.ixx) | 56 | 0 (0%) | 56 | 0 |
+| [src/ixx/auxid-dl.ixx](src/ixx/auxid-dl.ixx) | 57 | 0 (0%) | 55 | 2 |
 | [src/ixx/auxid-env.ixx](src/ixx/auxid-env.ixx) | 41 | 0 (0%) | 41 | 0 |
 | [src/ixx/auxid-ipc.ixx](src/ixx/auxid-ipc.ixx) | 248 | 2 (1%) | 246 | 0 |
 | [src/ixx/auxid-proc.ixx](src/ixx/auxid-proc.ixx) | 153 | 0 (0%) | 153 | 0 |
@@ -129,6 +129,8 @@ Commits that only change this file are left out.
 
 | Commit | Date | Model | Author | Subject |
 | --- | --- | --- | --- | --- |
+| `bb29dda` | 2026-11-25 | Claude Opus 5.5 | Claude | [MAINTAIN]: Skip the Trust Level Line in the Authorship Map |
+| `fdf8c43` | 2026-11-25 | Claude Opus 5.5 | Claude | [MAINTAIN]: Mark Unsafe Code in dl, env, time and Core Output |
 | `c3d9329` | 2026-11-25 | Claude Opus 5.5 | Claude | [MAINTAIN]: Write Return Types Trailing |
 | `c1ae7a7` | 2026-11-24 | Claude Opus 5.5 | Claude | [CI]: Add tools/authorship_map.py And A Check That AI-Human-Map.md Is Current |
 | `e35f587` | 2026-11-24 | Claude Opus 5.5 | Claude | [MAINTAIN]: Rewrite README |

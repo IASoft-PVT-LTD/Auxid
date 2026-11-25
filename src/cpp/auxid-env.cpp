@@ -1,3 +1,4 @@
+// auxid: trust-level 1
 // Auxid: The Rigid C++ Platform.
 //
 // Copyright (C) 2026 I-A-S (ias@iasoft.dev)
@@ -40,8 +41,10 @@ namespace au::env
     [[nodiscard]] auto path_from_utf8(StringView sv) -> filesystem::Path
     {
 #if AU_PLATFORM_WINDOWS
+      // SAFETY: char8_t is one byte, and the view covers exactly sv. The standard does not let char8_t
+      // alias char; this relies on path only passing the bytes on for conversion.
       // char8_t source: converts UTF-8 to the native wide encoding.
-      return filesystem::Path(
+      AU_UNSAFE return filesystem::Path(
           std::u8string_view(reinterpret_cast<const char8_t *>(sv.data()), sv.size()));
 #else
       // POSIX paths ARE bytes; plain chars pass through untranslated. (Also
@@ -58,13 +61,15 @@ namespace au::env
       Vec<wchar_t> wide;
       if (!utf8.empty())
       {
-        const int needed = ::MultiByteToWideChar(win32::CP_UTF8_, 0, utf8.data(),
-                                                 static_cast<int>(utf8.size()), nullptr, 0);
+        // SAFETY: reads utf8.size() bytes (int limits that to 2 GB) and only counts.
+        AU_UNSAFE const int needed = ::MultiByteToWideChar(win32::CP_UTF8_, 0, utf8.data(),
+                                                           static_cast<int>(utf8.size()), nullptr, 0);
         if (needed > 0)
         {
           wide.resize(static_cast<usize>(needed));
-          ::MultiByteToWideChar(win32::CP_UTF8_, 0, utf8.data(), static_cast<int>(utf8.size()),
-                                wide.data(), needed);
+          // SAFETY: the same input, written to the `needed` units just allocated.
+          AU_UNSAFE ::MultiByteToWideChar(win32::CP_UTF8_, 0, utf8.data(), static_cast<int>(utf8.size()),
+                                          wide.data(), needed);
         }
       }
       wide.push_back(L'\0');
@@ -75,13 +80,15 @@ namespace au::env
     {
       if (wide_len == 0)
         return String();
-      const int needed = ::WideCharToMultiByte(win32::CP_UTF8_, 0, wide, static_cast<int>(wide_len),
-                                               nullptr, 0, nullptr, nullptr);
+      // SAFETY: the caller passes wide_len readable units; this call only counts.
+      AU_UNSAFE const int needed = ::WideCharToMultiByte(win32::CP_UTF8_, 0, wide, static_cast<int>(wide_len),
+                                                         nullptr, 0, nullptr, nullptr);
       if (needed <= 0)
         return String();
       Vec<char> utf8(static_cast<usize>(needed));
-      ::WideCharToMultiByte(win32::CP_UTF8_, 0, wide, static_cast<int>(wide_len), utf8.data(), needed,
-                            nullptr, nullptr);
+      // SAFETY: the same input, written to the `needed` bytes just allocated.
+      AU_UNSAFE ::WideCharToMultiByte(win32::CP_UTF8_, 0, wide, static_cast<int>(wide_len), utf8.data(), needed,
+                                      nullptr, nullptr);
       return String(utf8.data(), utf8.size());
     }
 
@@ -94,7 +101,8 @@ namespace au::env
   {
     const Vec<wchar_t> wname = utf8_to_wide(name);
 
-    unsigned long size = ::GetEnvironmentVariableW(wname.data(), nullptr, 0);
+    // SAFETY: utf8_to_wide null-terminates; a null buffer of size 0 asks for the size.
+    AU_UNSAFE unsigned long size = ::GetEnvironmentVariableW(wname.data(), nullptr, 0);
     if (size == 0)
       return {}; // includes ERROR_ENVVAR_NOT_FOUND
 
@@ -103,7 +111,8 @@ namespace au::env
     for (int attempt = 0; attempt < 4; attempt++)
     {
       Vec<wchar_t> buffer(static_cast<usize>(size));
-      const unsigned long written = ::GetEnvironmentVariableW(wname.data(), buffer.data(), size);
+      // SAFETY: buffer holds exactly `size` units.
+      AU_UNSAFE const unsigned long written = ::GetEnvironmentVariableW(wname.data(), buffer.data(), size);
       if (written == 0)
         return {};
       if (written < size)
@@ -117,7 +126,9 @@ namespace au::env
   {
     const Vec<wchar_t> wname = utf8_to_wide(name);
     const Vec<wchar_t> wvalue = utf8_to_wide(value);
-    if (::SetEnvironmentVariableW(wname.data(), wvalue.data()) == 0)
+    // SAFETY: utf8_to_wide null-terminates, and both buffers outlive the call.
+    AU_UNSAFE const int done = ::SetEnvironmentVariableW(wname.data(), wvalue.data());
+    if (done == 0)
       return fail(std::move(Error::os_last()).ctx("env::set"));
     return {};
   }
@@ -125,7 +136,9 @@ namespace au::env
   AUXID_API auto unset(StringView name) -> Result<void>
   {
     const Vec<wchar_t> wname = utf8_to_wide(name);
-    if (::SetEnvironmentVariableW(wname.data(), nullptr) == 0)
+    // SAFETY: utf8_to_wide null-terminates; a null value removes the variable.
+    AU_UNSAFE const int done = ::SetEnvironmentVariableW(wname.data(), nullptr);
+    if (done == 0)
     {
       Error err = Error::os_last();
       if (static_cast<unsigned long>(err.code) == win32::ERROR_ENVVAR_NOT_FOUND_)
@@ -140,12 +153,16 @@ namespace au::env
     Vec<wchar_t> buffer(512);
     for (int attempt = 0; attempt < 8; attempt++)
     {
-      const unsigned long written =
+      // SAFETY: writes at most buffer.size() units; a null module means this executable.
+      AU_UNSAFE const unsigned long written =
           ::GetModuleFileNameW(nullptr, buffer.data(), static_cast<unsigned long>(buffer.size()));
       if (written == 0)
         return fail(std::move(Error::os_last()).ctx("env::executable_path"));
       if (static_cast<usize>(written) < buffer.size())
-        return filesystem::Path(buffer.data(), buffer.data() + written);
+      {
+        // SAFETY: written < buffer.size(), so the end stays inside the buffer.
+        AU_UNSAFE return filesystem::Path(buffer.data(), buffer.data() + written);
+      }
       buffer.resize(buffer.size() * 2);
     }
     return fail("env::executable_path: path length is unreasonable");
@@ -156,7 +173,9 @@ namespace au::env
   AUXID_API auto find(StringView name) -> Option<String>
   {
     const String zname(name);
-    const char *value = ::getenv(zname.c_str());
+    // SAFETY: zname is null-terminated. The value is copied below before anything here can change it;
+    // a set() or unset() on another thread at the same time is the caller's error (docs/OS-CONTRACT.md).
+    AU_UNSAFE const char *value = ::getenv(zname.c_str());
     if (value == nullptr)
       return {};
     return String(value);
@@ -166,7 +185,10 @@ namespace au::env
   {
     const String zname(name);
     const String zvalue(value);
-    if (::setenv(zname.c_str(), zvalue.c_str(), 1) != 0)
+    // SAFETY: both strings are null-terminated and setenv copies them. Not safe against a concurrent
+    // find(); that is the caller's contract.
+    AU_UNSAFE const int status = ::setenv(zname.c_str(), zvalue.c_str(), 1);
+    if (status != 0)
       return fail(Error::os(errno).ctx("env::set"));
     return {};
   }
@@ -174,7 +196,9 @@ namespace au::env
   AUXID_API auto unset(StringView name) -> Result<void>
   {
     const String zname(name);
-    if (::unsetenv(zname.c_str()) != 0)
+    // SAFETY: zname is null-terminated. Not safe against a concurrent find(); that is the caller's contract.
+    AU_UNSAFE const int status = ::unsetenv(zname.c_str());
+    if (status != 0)
       return fail(Error::os(errno).ctx("env::unset"));
     return {};
   }
@@ -186,16 +210,20 @@ namespace au::env
     return fail("executable_path: not expressible in a wasm sandbox");
 #  elif defined(AU_PLATFORM_APPLE)
     u32 size = 0;
-    ::_NSGetExecutablePath(nullptr, &size); // reports required size
+    // SAFETY: with size 0 it writes nothing but the required size.
+    AU_UNSAFE ::_NSGetExecutablePath(nullptr, &size);
     Vec<char> buffer(static_cast<usize>(size) + 1);
-    if (::_NSGetExecutablePath(buffer.data(), &size) != 0)
+    // SAFETY: buffer holds the `size` bytes it asked for, plus one.
+    AU_UNSAFE const int status = ::_NSGetExecutablePath(buffer.data(), &size);
+    if (status != 0)
       return fail("env::executable_path: _NSGetExecutablePath failed after sizing");
     return path_from_utf8(StringView(buffer.data(), compiler::strlen(buffer.data())));
 #  else
     Vec<char> buffer(1024);
     for (int attempt = 0; attempt < 8; attempt++)
     {
-      const isize written = ::readlink("/proc/self/exe", buffer.data(), buffer.size());
+      // SAFETY: writes at most buffer.size() bytes into buffer.
+      AU_UNSAFE const isize written = ::readlink("/proc/self/exe", buffer.data(), buffer.size());
       if (written < 0)
         return fail(Error::os(errno).ctx("env::executable_path"));
       if (static_cast<usize>(written) < buffer.size())

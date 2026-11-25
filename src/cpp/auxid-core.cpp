@@ -1,3 +1,4 @@
+// auxid: trust-level 1
 // Auxid: The Rigid C++ Platform.
 //
 // Copyright (C) 2026 I-A-S (ias@iasoft.dev)
@@ -43,16 +44,20 @@ namespace au::detail
             n = cut;
         }
 
-        const int units = ::MultiByteToWideChar(win32::CP_UTF8_, 0, text.data(), static_cast<int>(n), wide,
-                                                static_cast<int>(chunk_size));
+        // SAFETY: n <= text.size(), and n bytes never need more than the chunk_size units in wide.
+        AU_UNSAFE const int units = ::MultiByteToWideChar(win32::CP_UTF8_, 0, text.data(), static_cast<int>(n), wide,
+                                                          static_cast<int>(chunk_size));
         const wchar_t *at = wide;
         unsigned long left = units > 0 ? static_cast<unsigned long>(units) : 0;
         while (left > 0)
         {
           unsigned long written = 0;
-          if (!::WriteConsoleW(console, at, left, &written, nullptr) || written == 0)
+          // SAFETY: `at` has `left` converted units behind it.
+          AU_UNSAFE const int done = ::WriteConsoleW(console, at, left, &written, nullptr);
+          if (done == 0 || written == 0)
             return;
-          at += written;
+          // SAFETY: written <= left, so `at` stays inside wide or one past the converted units.
+          AU_UNSAFE at += written;
           left -= written;
         }
         text.remove_prefix(n);
@@ -63,20 +68,26 @@ namespace au::detail
     auto write_text(std::FILE *stream, std::string_view text) noexcept -> void
     {
 #if AU_PLATFORM_WINDOWS
-      const int fd = ::_fileno(stream);
+      // SAFETY: stream is stdout or stderr, see the two callers below.
+      AU_UNSAFE const int fd = ::_fileno(stream);
       if (fd >= 0)
       {
-        void *handle = reinterpret_cast<void *>(::_get_osfhandle(fd));
+        // SAFETY: the CRT returns a HANDLE as an integer; it is only ever passed back to the OS.
+        AU_UNSAFE void *handle = reinterpret_cast<void *>(::_get_osfhandle(fd));
         unsigned long mode = 0;
-        if (::GetConsoleMode(handle, &mode))
+        // SAFETY: the OS rejects a handle that is no console; mode is written only on success.
+        AU_UNSAFE const int is_console = ::GetConsoleMode(handle, &mode);
+        if (is_console != 0)
         {
-          std::fflush(stream);
+          // SAFETY: stream is stdout or stderr.
+          AU_UNSAFE std::fflush(stream);
           write_console(handle, text);
           return;
         }
       }
 #endif
-      std::fwrite(text.data(), 1, text.size(), stream);
+      // SAFETY: reads exactly text's bytes; stream is stdout or stderr.
+      AU_UNSAFE std::fwrite(text.data(), 1, text.size(), stream);
     }
   } // namespace
 
@@ -97,7 +108,9 @@ namespace au
   [[noreturn]] AUXID_API auto panic_handler(const char *msg, const char *file, u32 line) -> void
   {
     char buffer[1024];
-    const int length =
+    // SAFETY: bounded by sizeof(buffer), and the format matches. file and msg are null-terminated, which every
+    // panic entry point requires.
+    AU_UNSAFE const int length =
         std::snprintf(buffer, sizeof(buffer), "[PANIC]: (%s:%lu): %s\n", file, static_cast<unsigned long>(line), msg);
     if (length > 0 && static_cast<usize>(length) < sizeof(buffer))
     {
@@ -106,7 +119,9 @@ namespace au
     else
     {
       char line_text[32];
-      const int digits = std::snprintf(line_text, sizeof(line_text), ":%lu): ", static_cast<unsigned long>(line));
+      // SAFETY: bounded by sizeof(line_text), which fits any u32, and the format matches.
+      AU_UNSAFE const int digits =
+          std::snprintf(line_text, sizeof(line_text), ":%lu): ", static_cast<unsigned long>(line));
       detail::write_stderr("[PANIC]: (");
       detail::write_stderr(file);
       detail::write_stderr(std::string_view(line_text, static_cast<usize>(digits)));
