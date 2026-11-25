@@ -102,7 +102,7 @@ low-level seam `auxid.proc` will use for child stdio.
 |----|----------|
 | `pipe() -> Result<PipePair>` | Anonymous unidirectional pipe. `read` Ok(0) = all writers closed. |
 | `PipeReader::read` / `PipeWriter::write` | Blocking; short writes possible; `write_all` loops. |
-| `ChannelListener::bind(name)` | Realization: `\\.\pipe\auxid.<name>` (Windows) / `<XDG_RUNTIME_DIR else /tmp>/auxid.<name>.sock` chmod 0600 (POSIX). POSIX stale-socket recovery: a connect probe that is refused marks the node stale and it is unlinked; a live owner yields an Err (`EADDRINUSE`). Socket node is unlinked on listener close. |
+| `ChannelListener::bind(name)` | Realization: `\\.\pipe\auxid.<name>` (Windows) / `<XDG_RUNTIME_DIR else /tmp>/auxid.<name>.sock` chmod 0600 (POSIX). POSIX stale-socket recovery: a connect probe that is refused marks the node stale and it is unlinked; a live owner yields an Err (`EADDRINUSE`), and so does a probe that fails in any other way; the node is then left alone. Socket node is unlinked on listener close. |
 | `ChannelListener::accept()` | Blocking; one `Channel` per client. Windows stages the next pipe instance before handing out the connected one; clients seeing `ERROR_PIPE_BUSY` wait-and-retry inside `connect`. |
 | `Channel::connect(name)` / `read` / `write` | Bidirectional byte stream. `read` Ok(0) = peer closed; `write` to a gone peer is an Err with `is_closed()` true. POSIX writes are SIGPIPE-safe (`MSG_NOSIGNAL` / `SO_NOSIGPIPE`). Caution: writing to a closed **anonymous pipe** on POSIX still raises SIGPIPE (no per-write suppression exists for pipes) — supervise child exit before writing, or ignore SIGPIPE at the application level. |
 | `InstanceLock::acquire(app_key)` | Named mutex `Local\auxid.<key>` (Windows) / `flock(LOCK_EX\|LOCK_NB)` on `<runtime>/auxid.<key>.lock` (POSIX). Losing to a live primary is an Err with `is_already_held()` true. The POSIX lock file is deliberately never unlinked (unlink-vs-flock races); the lock dies with the descriptor — including on crash, which is the point. |
@@ -120,7 +120,7 @@ Windows named pipes currently use default OS ACLs — a hardening pass
 | `spawn(exe, opts)` | `exe` is a real path — **no PATH search** on any platform. Windows builds the command line with MSVC quoting rules; POSIX is fork+exec with everything allocated pre-fork (only async-signal-safe calls between fork and exec; exec failure = child exit 127, setup failure = 126). A replacement `env` replaces the ENTIRE environment. Stdio per-stream: Inherit / Piped (parent end exposed on `Process`) / Null. |
 | `Process::wait()` | Blocking, idempotent (cached after first completion). `ExitStatus.abnormal` is best-effort: signal deaths on POSIX (`code` = signal), NTSTATUS-range exit codes on Windows. |
 | `Process::try_status()` | Non-blocking; none = still running. POSIX note: a reaped child is reaped — status is cached thereafter. |
-| `Process::terminate()` | Hard kill (`TerminateProcess(…, 1)` / SIGKILL). Graceful shutdown = an IPC message plus this as fallback (D-010: no `request_exit`). |
+| `Process::terminate()` | Hard kill (`TerminateProcess(…, 1)` / SIGKILL). Graceful shutdown = an IPC message plus this as fallback (D-010: no `request_exit`). An Err once `wait()`/`try_status()` has seen the child exit. |
 | `Process` destruction | **Detaches** — closes our handle; the child keeps running. Kill-on-drop is LifetimeGroup's job, never the destructor's. |
 | `LifetimeGroup` | Enrollment at spawn only (atomic with creation). Kill-on-close semantics per platform below. POSIX children killed by a group close become zombies until `wait()`ed or the parent exits. |
 
@@ -136,9 +136,9 @@ Caveats (v1): Windows spawns use `bInheritHandles=TRUE`, so *concurrent*
 spawns from multiple threads can leak each other's inheritable pipe ends
 into the wrong child (delaying pipe EOF) — serialize spawns or accept the
 window until the PROC_THREAD_ATTRIBUTE_LIST hardening lands. POSIX group
-close kills by pid — a group held long after its children were waited on
-could, in principle, hit a recycled pid; keep groups scoped to their
-children's lifetime.
+close kills by pid, but only children that `wait()` or `try_status()` has not
+reaped yet, so it cannot hit a recycled pid (unless something else in the
+program reaps them, such as `waitpid(-1)` or an ignored SIGCHLD).
 
 ## auxid.dl
 

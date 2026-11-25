@@ -560,9 +560,15 @@ namespace au::ipc
           return fail(Error(ErrorDomain::Os, EADDRINUSE,
                             String("ipc::ChannelListener::bind: name already in use")));
         }
+        const int saved = errno;
         ::close(probe);
-        // SAFETY: path is null-terminated.
-        AU_UNSAFE ::unlink(path.c_str());
+        if (saved == ECONNREFUSED)
+        {
+          // SAFETY: path is null-terminated.
+          AU_UNSAFE ::unlink(path.c_str());
+        }
+        else if (saved != ENOENT)
+          return fail(Error::os(saved).ctx("ipc::ChannelListener::bind"));
       }
     }
 

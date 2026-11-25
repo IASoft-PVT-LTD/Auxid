@@ -37,6 +37,7 @@ module auxid.proc;
 
 import auxid.memory;
 import auxid.containers;
+import auxid.thread;
 
 namespace au::proc
 {
@@ -49,13 +50,91 @@ namespace au::proc
       return Error(String::format("{}: not expressible in a wasm sandbox", op));
     }
 
-#elif AU_PLATFORM_WINDOWS
+#else
 
+#  if AU_PLATFORM_WINDOWS
     [[nodiscard]] auto to_handle(i64 native) noexcept -> void *
     {
       // SAFETY: a HANDLE stored as an integer; it is only passed back to the OS.
       AU_UNSAFE return reinterpret_cast<void *>(static_cast<std::intptr_t>(native));
     }
+
+    auto close_native(i64 native) -> void
+    {
+      // SAFETY: the one caller owns native, an open handle, and forgets it.
+      AU_UNSAFE ::CloseHandle(to_handle(native));
+    }
+
+#  else
+    auto close_native(i64 native) -> void
+    {
+      ::close(static_cast<int>(native));
+    }
+
+#  endif
+
+    // An open handle or descriptor, closed on destruction: spawn gives up its copies on every path.
+    class OwnedNative
+    {
+public:
+      OwnedNative() noexcept = default;
+
+      explicit OwnedNative(i64 native) noexcept : m_native(native)
+      {
+      }
+
+      OwnedNative(const OwnedNative &) = delete;
+      auto operator=(const OwnedNative &) -> OwnedNative & = delete;
+
+      OwnedNative(OwnedNative &&other) noexcept : m_native(other.release())
+      {
+      }
+
+      auto operator=(OwnedNative &&other) noexcept -> OwnedNative &
+      {
+        if (this != &other)
+        {
+          close();
+          m_native = other.release();
+        }
+        return *this;
+      }
+
+      ~OwnedNative()
+      {
+        close();
+      }
+
+      [[nodiscard]] auto is_open() const noexcept -> bool
+      {
+        return m_native != -1;
+      }
+
+      [[nodiscard]] auto get() const noexcept -> i64
+      {
+        return m_native;
+      }
+
+      [[nodiscard]] auto release() noexcept -> i64
+      {
+        const i64 native = m_native;
+        m_native = -1;
+        return native;
+      }
+
+      auto close() -> void
+      {
+        if (is_open())
+          close_native(release());
+      }
+
+private:
+      i64 m_native = -1;
+    };
+
+#endif
+
+#if AU_PLATFORM_WINDOWS
 
     // MSVC command-line quoting rules: backslashes double only before a
     // quote; the argument is wrapped in quotes when it contains separators.
@@ -121,8 +200,8 @@ namespace au::proc
     struct ChildStdio
     {
       void *child_handle = nullptr; // the handle the child receives
-      i64 parent_end = -1;          // parent side of a Piped mode, else -1
-      bool close_child_after_spawn = false;
+      OwnedNative child_end{};      // that handle, unless it is inherited from this process
+      OwnedNative parent_end{};     // parent side of a Piped mode
     };
 
     [[nodiscard]] auto prepare_stdio(StdioMode mode, unsigned long std_handle_id, bool child_reads)
@@ -141,35 +220,38 @@ namespace au::proc
                           win32::FILE_SHARE_READ_WRITE_, nullptr, win32::OPEN_EXISTING_, 0, nullptr);
         if (null_handle == win32::invalid_handle())
           return fail(Error::os_last().ctx("proc::spawn: opening NUL"));
+        // SAFETY: a HANDLE fits in 64 bits; to_handle reverses this.
+        AU_UNSAFE out.child_end = OwnedNative(static_cast<i64>(reinterpret_cast<std::intptr_t>(null_handle)));
         // SAFETY: null_handle was just opened.
         AU_UNSAFE ::SetHandleInformation(null_handle, win32::HANDLE_FLAG_INHERIT_, win32::HANDLE_FLAG_INHERIT_);
         out.child_handle = null_handle;
-        out.close_child_after_spawn = true;
         return out;
       }
       case StdioMode::Piped: {
         AU_TRY_VAR(pair, ipc::pipe());
-        const i64 child_end = child_reads ? pair.reader.release_native() : pair.writer.release_native();
-        out.parent_end = child_reads ? pair.writer.release_native() : pair.reader.release_native();
-        // SAFETY: child_end is an open pipe handle.
-        AU_UNSAFE ::SetHandleInformation(to_handle(child_end), win32::HANDLE_FLAG_INHERIT_,
-                               win32::HANDLE_FLAG_INHERIT_);
-        out.child_handle = to_handle(child_end);
-        out.close_child_after_spawn = true;
+        out.child_end = OwnedNative(child_reads ? pair.reader.release_native() : pair.writer.release_native());
+        out.parent_end = OwnedNative(child_reads ? pair.writer.release_native() : pair.reader.release_native());
+        out.child_handle = to_handle(out.child_end.get());
+        // SAFETY: child_handle is an open pipe handle.
+        AU_UNSAFE ::SetHandleInformation(out.child_handle, win32::HANDLE_FLAG_INHERIT_, win32::HANDLE_FLAG_INHERIT_);
         return out;
       }
       }
       return fail("proc::spawn: unknown StdioMode");
     }
 
-#else // POSIX
+#elif !defined(AU_PLATFORM_WASM)
 
     struct ChildStdio
     {
-      int child_fd = -1;    // dup2'd onto 0/1/2 in the child
-      i64 parent_end = -1;  // parent side of a Piped mode, else -1
-      bool close_child_after_spawn = false;
+      OwnedNative child_end{};  // dup2'd onto 0/1/2 in the child
+      OwnedNative parent_end{}; // parent side of a Piped mode
     };
+
+    [[nodiscard]] auto fd_of(const OwnedNative &end) noexcept -> int
+    {
+      return static_cast<int>(end.get());
+    }
 
     [[nodiscard]] auto prepare_stdio(StdioMode mode, bool child_reads) -> Result<ChildStdio>
     {
@@ -183,16 +265,13 @@ namespace au::proc
         AU_UNSAFE const int null_fd = ::open("/dev/null", O_RDWR | O_CLOEXEC);
         if (null_fd < 0)
           return fail(Error::os(errno).ctx("proc::spawn: opening /dev/null"));
-        out.child_fd = null_fd;
-        out.close_child_after_spawn = true;
+        out.child_end = OwnedNative(null_fd);
         return out;
       }
       case StdioMode::Piped: {
         AU_TRY_VAR(pair, ipc::pipe());
-        out.child_fd =
-            static_cast<int>(child_reads ? pair.reader.release_native() : pair.writer.release_native());
-        out.parent_end = child_reads ? pair.writer.release_native() : pair.reader.release_native();
-        out.close_child_after_spawn = true;
+        out.child_end = OwnedNative(child_reads ? pair.reader.release_native() : pair.writer.release_native());
+        out.parent_end = OwnedNative(child_reads ? pair.writer.release_native() : pair.reader.release_native());
         return out;
       }
       }
@@ -301,17 +380,6 @@ namespace au::proc
     AU_TRY_VAR(io_out, prepare_stdio(opts.stdout_mode, win32::STD_OUTPUT_HANDLE_, false));
     AU_TRY_VAR(io_err, prepare_stdio(opts.stderr_mode, win32::STD_ERROR_HANDLE_, false));
 
-    auto cleanup_stdio = [&]() {
-      // SAFETY: the three locals above outlive the loop, and each closed handle is an open one this function owns.
-      AU_UNSAFE for (ChildStdio *io : {&io_in, &io_out, &io_err})
-      {
-        if (io->close_child_after_spawn && io->child_handle != nullptr)
-          ::CloseHandle(io->child_handle);
-        if (io->parent_end != -1)
-          ::CloseHandle(to_handle(io->parent_end));
-      }
-    };
-
     // Optional replacement environment: UTF-16 double-null-terminated block.
     Vec<wchar_t> env_block;
     unsigned long creation_flags = 0;
@@ -350,7 +418,6 @@ namespace au::proc
     if (created == 0)
     {
       Error err = Error::os_last();
-      cleanup_stdio();
       return fail(std::move(err).ctx("proc::spawn"));
     }
 
@@ -368,7 +435,6 @@ namespace au::proc
           ::CloseHandle(pi.thread);
           ::CloseHandle(pi.process);
         }
-        cleanup_stdio();
         return fail(std::move(err).ctx("proc::spawn: LifetimeGroup enrollment"));
       }
       // SAFETY: pi.thread is the open handle CreateProcessW returned.
@@ -377,24 +443,16 @@ namespace au::proc
     // SAFETY: pi.thread is open, and this is its only close on this path.
     AU_UNSAFE ::CloseHandle(pi.thread);
 
-    // Child-side handles are the child's now; drop our copies.
-    // SAFETY: the three locals above outlive the loop, and each closed handle is an open one this function owns.
-    AU_UNSAFE for (ChildStdio *io : {&io_in, &io_out, &io_err})
-    {
-      if (io->close_child_after_spawn && io->child_handle != nullptr)
-        ::CloseHandle(io->child_handle);
-    }
-
     Process process;
     // SAFETY: a HANDLE fits in 64 bits; to_handle reverses this.
     AU_UNSAFE process.m_process = static_cast<i64>(reinterpret_cast<std::intptr_t>(pi.process));
     process.m_id = static_cast<u64>(pi.process_id);
-    if (io_in.parent_end != -1)
-      process.m_stdin = ipc::PipeWriter::adopt_native(io_in.parent_end);
-    if (io_out.parent_end != -1)
-      process.m_stdout = ipc::PipeReader::adopt_native(io_out.parent_end);
-    if (io_err.parent_end != -1)
-      process.m_stderr = ipc::PipeReader::adopt_native(io_err.parent_end);
+    if (io_in.parent_end.is_open())
+      process.m_stdin = ipc::PipeWriter::adopt_native(io_in.parent_end.release());
+    if (io_out.parent_end.is_open())
+      process.m_stdout = ipc::PipeReader::adopt_native(io_out.parent_end.release());
+    if (io_err.parent_end.is_open())
+      process.m_stderr = ipc::PipeReader::adopt_native(io_err.parent_end.release());
     return process;
   }
 
@@ -450,6 +508,8 @@ namespace au::proc
   {
     if (m_process == -1)
       return fail("proc::Process::terminate: no process");
+    if (m_reaped)
+      return fail("proc::Process::terminate: the process has exited");
     // SAFETY: m_process is an open process handle.
     AU_UNSAFE const int killed = ::TerminateProcess(to_handle(m_process), 1);
     if (killed == 0)
@@ -459,6 +519,53 @@ namespace au::proc
 
 #else // POSIX
 
+  namespace
+  {
+    // waitpid, with errno set on -1 and 0 while the child runs (only if `block` is false). A child of a group is
+    // reaped under the group's lock and leaves it, so LifetimeGroup::close() cannot signal a recycled pid.
+    [[nodiscard]] auto reap(pid_t pid, const Arc<detail::Children> &group, bool block, int &status) -> pid_t
+    {
+      if (!group)
+      {
+        pid_t reaped = -1;
+        do
+        {
+          // SAFETY: writes one int into status.
+          AU_UNSAFE reaped = ::waitpid(pid, &status, block ? 0 : WNOHANG);
+        } while (reaped < 0 && errno == EINTR);
+        return reaped;
+      }
+
+      // Blocks without reaping, so the lock is not held meanwhile.
+      while (block)
+      {
+        siginfo_t info{};
+        // SAFETY: writes one siginfo_t into info.
+        AU_UNSAFE const int waited = ::waitid(P_PID, static_cast<id_t>(pid), &info, WEXITED | WNOWAIT);
+        if (waited == 0)
+          break;
+        if (errno != EINTR)
+          return -1;
+      }
+
+      LockGuard<Mutex> lock(group->mutex);
+      // SAFETY: writes one int into status.
+      AU_UNSAFE const pid_t reaped = ::waitpid(pid, &status, WNOHANG);
+      if (reaped == pid)
+      {
+        for (usize i = 0; i < group->pids.size(); i++)
+        {
+          if (group->pids[i] != static_cast<u64>(pid))
+            continue;
+          group->pids[i] = group->pids.back();
+          group->pids.pop_back();
+          break;
+        }
+      }
+      return reaped;
+    }
+  } // namespace
+
   AUXID_API auto LifetimeGroup::create() -> Result<LifetimeGroup>
   {
     return LifetimeGroup{}; // pid tracking only; Linux children add PDEATHSIG
@@ -466,9 +573,13 @@ namespace au::proc
 
   AUXID_API auto LifetimeGroup::close() -> void
   {
-    for (usize i = 0; i < m_pids.size(); i++)
-      ::kill(static_cast<pid_t>(m_pids[i]), SIGKILL); // best effort
-    m_pids.clear();
+    if (m_children)
+    {
+      LockGuard<Mutex> lock(m_children->mutex);
+      for (const u64 pid : m_children->pids)
+        ::kill(static_cast<pid_t>(pid), SIGKILL); // best effort
+      m_children->pids.clear();
+    }
     m_native = -1;
   }
 
@@ -513,22 +624,22 @@ namespace au::proc
     AU_TRY_VAR(io_out, prepare_stdio(opts.stdout_mode, false));
     AU_TRY_VAR(io_err, prepare_stdio(opts.stderr_mode, false));
 
-    const bool enroll = opts.lifetime != nullptr;
+    Arc<detail::Children> group;
+    if (opts.lifetime != nullptr)
+    {
+      // SAFETY: not null, and the caller keeps the group alive for this call.
+      AU_UNSAFE
+      {
+        if (!opts.lifetime->m_children)
+          opts.lifetime->m_children = make_arc<detail::Children>();
+        group = opts.lifetime->m_children;
+      }
+    }
+    const bool enroll = static_cast<bool>(group);
 
     const pid_t pid = ::fork();
     if (pid < 0)
-    {
-      const int saved = errno;
-      // SAFETY: the three locals above outlive the loop.
-      AU_UNSAFE for (ChildStdio *io : {&io_in, &io_out, &io_err})
-      {
-        if (io->child_fd != -1)
-          ::close(io->child_fd);
-        if (io->parent_end != -1)
-          ::close(static_cast<int>(io->parent_end));
-      }
-      return fail(Error::os(saved).ctx("proc::spawn: fork"));
-    }
+      return fail(Error::os(errno).ctx("proc::spawn: fork"));
 
     if (pid == 0)
     {
@@ -539,19 +650,19 @@ namespace au::proc
 #  else
       AU_UNUSED(enroll);
 #  endif
-      if (io_in.child_fd != -1 && ::dup2(io_in.child_fd, 0) < 0)
+      if (io_in.child_end.is_open() && ::dup2(fd_of(io_in.child_end), 0) < 0)
         ::_exit(126);
-      if (io_out.child_fd != -1 && ::dup2(io_out.child_fd, 1) < 0)
+      if (io_out.child_end.is_open() && ::dup2(fd_of(io_out.child_end), 1) < 0)
         ::_exit(126);
-      if (io_err.child_fd != -1 && ::dup2(io_err.child_fd, 2) < 0)
+      if (io_err.child_end.is_open() && ::dup2(fd_of(io_err.child_end), 2) < 0)
         ::_exit(126);
       // SAFETY: the three locals above outlive the loop.
-      AU_UNSAFE for (ChildStdio *io : {&io_in, &io_out, &io_err})
+      AU_UNSAFE for (const ChildStdio *io : {&io_in, &io_out, &io_err})
       {
-        if (io->child_fd > 2)
-          ::close(io->child_fd);
-        if (io->parent_end != -1)
-          ::close(static_cast<int>(io->parent_end));
+        if (fd_of(io->child_end) > 2)
+          ::close(fd_of(io->child_end));
+        if (io->parent_end.is_open())
+          ::close(fd_of(io->parent_end));
       }
       // SAFETY: chdir_to is null-terminated and points into opts.working_dir.
       AU_UNSAFE if (chdir_to != nullptr && ::chdir(chdir_to) != 0)
@@ -569,29 +680,22 @@ namespace au::proc
       ::_exit(127);
     }
 
-    // Parent: the child ends belong to the child now.
-    // SAFETY: the three locals above outlive the loop.
-    AU_UNSAFE for (ChildStdio *io : {&io_in, &io_out, &io_err})
+    if (group)
     {
-      if (io->child_fd != -1)
-        ::close(io->child_fd);
-    }
-
-    if (opts.lifetime != nullptr)
-    {
-      // SAFETY: not null, and the caller keeps the group alive for this call.
-      AU_UNSAFE opts.lifetime->m_pids.push_back(static_cast<u64>(pid));
+      LockGuard<Mutex> lock(group->mutex);
+      group->pids.push_back(static_cast<u64>(pid));
     }
 
     Process process;
     process.m_process = static_cast<i64>(pid);
     process.m_id = static_cast<u64>(pid);
-    if (io_in.parent_end != -1)
-      process.m_stdin = ipc::PipeWriter::adopt_native(io_in.parent_end);
-    if (io_out.parent_end != -1)
-      process.m_stdout = ipc::PipeReader::adopt_native(io_out.parent_end);
-    if (io_err.parent_end != -1)
-      process.m_stderr = ipc::PipeReader::adopt_native(io_err.parent_end);
+    process.m_children = static_cast<Arc<detail::Children> &&>(group);
+    if (io_in.parent_end.is_open())
+      process.m_stdin = ipc::PipeWriter::adopt_native(io_in.parent_end.release());
+    if (io_out.parent_end.is_open())
+      process.m_stdout = ipc::PipeReader::adopt_native(io_out.parent_end.release());
+    if (io_err.parent_end.is_open())
+      process.m_stderr = ipc::PipeReader::adopt_native(io_err.parent_end.release());
     return process;
   }
 
@@ -608,16 +712,8 @@ namespace au::proc
       return fail("proc::Process::wait: no process");
 
     int status = 0;
-    for (;;)
-    {
-      // SAFETY: writes one int into status.
-      AU_UNSAFE const pid_t reaped = ::waitpid(static_cast<pid_t>(m_process), &status, 0);
-      if (reaped >= 0)
-        break;
-      if (errno == EINTR)
-        continue;
+    if (reap(static_cast<pid_t>(m_process), m_children, true, status) < 0)
       return fail(Error::os(errno).ctx("proc::Process::wait"));
-    }
 
     if (WIFEXITED(status))
       m_last_status = ExitStatus{WEXITSTATUS(status), false};
@@ -637,8 +733,7 @@ namespace au::proc
       return fail("proc::Process::try_status: no process");
 
     int status = 0;
-    // SAFETY: writes one int into status.
-    AU_UNSAFE const pid_t reaped = ::waitpid(static_cast<pid_t>(m_process), &status, WNOHANG);
+    const pid_t reaped = reap(static_cast<pid_t>(m_process), m_children, false, status);
     if (reaped == 0)
       return Option<ExitStatus>{};
     if (reaped < 0)
@@ -658,6 +753,8 @@ namespace au::proc
   {
     if (m_process == -1)
       return fail("proc::Process::terminate: no process");
+    if (m_reaped)
+      return fail("proc::Process::terminate: the process has exited");
     if (::kill(static_cast<pid_t>(m_process), SIGKILL) != 0)
       return fail(Error::os(errno).ctx("proc::Process::terminate"));
     return {};
