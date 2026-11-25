@@ -147,14 +147,14 @@ public:
       return *this;
     }
 
-    [[nodiscard]] bool operator()() const
+    [[nodiscard]] auto operator()() const -> bool
     {
       return m_invoke(&m_buf);
     }
 
 private:
     template<class F>
-    static bool invoke_impl(const void *p) noexcept(noexcept((*static_cast<const F *>(p))()))
+    static auto invoke_impl(const void *p) noexcept(noexcept((*static_cast<const F *>(p))())) -> bool
     {
       return (*static_cast<const F *>(p))();
     }
@@ -360,7 +360,7 @@ public:
 
   AUXID_API auto register_test_block(TestRegistry::TestEntry entry) -> void;
 
-  template<typename BlockType> void invoke_test_block(DefaultRunner &r)
+  template<typename BlockType> auto invoke_test_block(DefaultRunner &r) -> void
   {
     r.test_block<BlockType>();
   }

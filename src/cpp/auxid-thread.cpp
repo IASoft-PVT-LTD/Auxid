@@ -165,7 +165,7 @@ namespace au::auxid
     }
 
     RpmallocLifetime(const RpmallocLifetime &) = delete;
-    RpmallocLifetime &operator=(const RpmallocLifetime &) = delete;
+    auto operator=(const RpmallocLifetime &) -> RpmallocLifetime & = delete;
   };
 #endif
 

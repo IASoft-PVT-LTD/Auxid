@@ -61,14 +61,14 @@ export namespace au
 
 export namespace au::compiler
 {
-  template<class T> constexpr T *addressof(T &arg) noexcept
+  template<class T> constexpr auto addressof(T &arg) noexcept -> T *
   {
     return std::addressof(arg);
   }
 
-  template<class T> const T *addressof(const T &&) = delete;
+  template<class T> auto addressof(const T &&) -> const T * = delete;
 
-  [[noreturn]] inline void trap() noexcept
+  [[noreturn]] inline auto trap() noexcept -> void
   {
 #if defined(_MSC_VER) && !defined(__clang__)
     __debugbreak();
@@ -84,17 +84,17 @@ export namespace au::compiler
 #endif
   }
 
-  inline int memcmp(const void *lhs, const void *rhs, std::size_t n) noexcept
+  inline auto memcmp(const void *lhs, const void *rhs, std::size_t n) noexcept -> int
   {
     return std::memcmp(lhs, rhs, n);
   }
 
-  inline std::size_t strlen(const char *s) noexcept
+  inline auto strlen(const char *s) noexcept -> std::size_t
   {
     return std::strlen(s);
   }
 
-  inline const void *memchr(const void *p, int c, std::size_t n) noexcept
+  inline auto memchr(const void *p, int c, std::size_t n) noexcept -> const void *
   {
     return std::memchr(p, c, n);
   }
@@ -102,17 +102,17 @@ export namespace au::compiler
 
 export namespace au
 {
-  template<class T> constexpr T *addressof(T &arg) noexcept
+  template<class T> constexpr auto addressof(T &arg) noexcept -> T *
   {
     return compiler::addressof(arg);
   }
 
-  template<class T, class... Args> constexpr T *construct_at(T *p, Args &&...args)
+  template<class T, class... Args> constexpr auto construct_at(T *p, Args &&...args) -> T *
   {
     return ::new (static_cast<void *>(p)) T(static_cast<Args &&>(args)...);
   }
 
-  template<class T> constexpr void destroy_at(T *p)
+  template<class T> constexpr auto destroy_at(T *p) -> void
   {
     if constexpr (std::is_array_v<T>)
     {
@@ -260,7 +260,7 @@ public:
         au::construct_at(&m_err, std::move(other.m_err));
     }
 
-    constexpr ResultT &operator=(const ResultT &other)
+    constexpr auto operator=(const ResultT &other) -> ResultT &
       requires(std::is_copy_constructible_v<T> && std::is_copy_constructible_v<E>)
     {
       if (this == &other)
@@ -293,7 +293,7 @@ public:
       return *this;
     }
 
-    constexpr ResultT &operator=(ResultT &&other) noexcept
+    constexpr auto operator=(ResultT &&other) noexcept -> ResultT &
       requires(std::is_move_constructible_v<T> && std::is_move_constructible_v<E>)
     {
       if (this == &other)
@@ -326,28 +326,28 @@ public:
       return *this;
     }
 
-    constexpr T &unwrap(std::source_location loc = std::source_location::current()) &
+    constexpr auto unwrap(std::source_location loc = std::source_location::current()) & -> T &
     {
       if (!m_is_ok)
         au::panic("Called unwrap() on an Error Result", loc);
       return m_val;
     }
 
-    constexpr const T &unwrap(std::source_location loc = std::source_location::current()) const &
+    constexpr auto unwrap(std::source_location loc = std::source_location::current()) const & -> const T &
     {
       if (!m_is_ok)
         au::panic("Called unwrap() on an Error Result", loc);
       return m_val;
     }
 
-    constexpr T unwrap(std::source_location loc = std::source_location::current()) &&
+    constexpr auto unwrap(std::source_location loc = std::source_location::current()) && -> T
     {
       if (!m_is_ok)
         au::panic("Called unwrap() on an Error Result", loc);
       return std::move(m_val);
     }
 
-    constexpr const E &unwrap_err(std::source_location loc = std::source_location::current()) const &
+    constexpr auto unwrap_err(std::source_location loc = std::source_location::current()) const & -> const E &
     {
       if (m_is_ok)
         au::panic("Called unwrap_err() on an Ok Result", loc);
@@ -357,54 +357,54 @@ public:
     // Non-const overload so std::move(res.unwrap_err()) is a real move: the
     // const& overload alone yields const E&& — which binds to E's COPY
     // constructor. AU_TRY error propagation relies on this overload.
-    constexpr E &unwrap_err(std::source_location loc = std::source_location::current()) &
+    constexpr auto unwrap_err(std::source_location loc = std::source_location::current()) & -> E &
     {
       if (m_is_ok)
         au::panic("Called unwrap_err() on an Ok Result", loc);
       return m_err;
     }
 
-    constexpr const E &err(std::source_location loc = std::source_location::current()) const &
+    constexpr auto err(std::source_location loc = std::source_location::current()) const & -> const E &
     {
       return unwrap_err(loc);
     }
 
-    constexpr const E &error(std::source_location loc = std::source_location::current()) const &
+    constexpr auto error(std::source_location loc = std::source_location::current()) const & -> const E &
     {
       return unwrap_err(loc);
     }
 
-    [[nodiscard]] constexpr bool is_ok() const
+    [[nodiscard]] constexpr auto is_ok() const -> bool
     {
       return m_is_ok;
     }
 
-    [[nodiscard]] constexpr bool is_err() const
+    [[nodiscard]] constexpr auto is_err() const -> bool
     {
       return !m_is_ok;
     }
 
-    [[nodiscard]] constexpr bool has_value() const
+    [[nodiscard]] constexpr auto has_value() const -> bool
     {
       return m_is_ok;
     }
 
-    constexpr T &operator*() &
+    constexpr auto operator*() & -> T &
     {
       return unwrap();
     }
 
-    constexpr const T &operator*() const &
+    constexpr auto operator*() const & -> const T &
     {
       return unwrap();
     }
 
-    constexpr T *operator->()
+    constexpr auto operator->() -> T *
     {
       return &unwrap();
     }
 
-    constexpr const T *operator->() const
+    constexpr auto operator->() const -> const T *
     {
       return &unwrap();
     }
@@ -447,7 +447,7 @@ public:
         au::construct_at(&m_err, other.m_err);
     }
 
-    constexpr ResultT &operator=(const ResultT &other)
+    constexpr auto operator=(const ResultT &other) -> ResultT &
       requires std::is_copy_constructible_v<E>
     {
       if (this == &other)
@@ -471,7 +471,7 @@ public:
       return *this;
     }
 
-    constexpr ResultT &operator=(ResultT &&other) noexcept
+    constexpr auto operator=(ResultT &&other) noexcept -> ResultT &
       requires std::is_move_constructible_v<E>
     {
       if (this == &other)
@@ -532,28 +532,28 @@ public:
       }
     }
 
-    constexpr void unwrap(std::source_location loc = std::source_location::current()) const
+    constexpr auto unwrap(std::source_location loc = std::source_location::current()) const -> void
     {
       if (!m_is_ok)
         au::panic("Called unwrap() on an Error Result", loc);
     }
 
-    [[nodiscard]] constexpr bool is_ok() const
+    [[nodiscard]] constexpr auto is_ok() const -> bool
     {
       return m_is_ok;
     }
 
-    [[nodiscard]] constexpr bool is_err() const
+    [[nodiscard]] constexpr auto is_err() const -> bool
     {
       return !m_is_ok;
     }
 
-    [[nodiscard]] constexpr bool has_value() const
+    [[nodiscard]] constexpr auto has_value() const -> bool
     {
       return m_is_ok;
     }
 
-    constexpr const E &unwrap_err(std::source_location loc = std::source_location::current()) const &
+    constexpr auto unwrap_err(std::source_location loc = std::source_location::current()) const & -> const E &
     {
       if (m_is_ok)
         au::panic("Called unwrap_err() on an Ok Result", loc);
@@ -561,19 +561,19 @@ public:
     }
 
     // See the primary template: required for AU_TRY to move rather than copy.
-    constexpr E &unwrap_err(std::source_location loc = std::source_location::current()) &
+    constexpr auto unwrap_err(std::source_location loc = std::source_location::current()) & -> E &
     {
       if (m_is_ok)
         au::panic("Called unwrap_err() on an Ok Result", loc);
       return m_err;
     }
 
-    constexpr const E &err(std::source_location loc = std::source_location::current()) const &
+    constexpr auto err(std::source_location loc = std::source_location::current()) const & -> const E &
     {
       return unwrap_err(loc);
     }
 
-    constexpr const E &error(std::source_location loc = std::source_location::current()) const &
+    constexpr auto error(std::source_location loc = std::source_location::current()) const & -> const E &
     {
       return unwrap_err(loc);
     }
